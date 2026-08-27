@@ -1,178 +1,101 @@
-# Shared Grocery Collection Tool
+# Boodschappen
 
-A simple shared grocery submission tool with central storage, soft deletion, audit logging, and export functionality.
-https://erikdevos.github.io/nw-commissions/
+Interne tool om wekelijkse boodschappenwensen te verzamelen. Collega's zetten een
+product op de lijst, één persoon bestelt de hele ronde bij Albert Heijn.
 
-## Features
+- Producten komen rechtstreeks uit de AH-productcatalogus: zoeken, aanklikken, klaar.
+- Wat vaker besteld wordt, verschijnt onder **Vaker besteld** en gaat met één klik
+  terug op de lijst.
+- De besteller zet de hele lijst in één keer op besteld.
 
-- **Submit grocery items** with name, quantity, substitute info, image URL, and AH link
-- **View items** by status (Open, Closed, Deleted)
-- **Close/Reopen items** to track completion
-- **Soft delete** items (requires admin code)
-- **Bulk actions** to delete closed or all items
-- **Export** via Print or Copy as Text
-- **Audit logging** with timestamps, IP, and user agent
+## Hoe het werkt
 
-## Tech Stack
+Statische frontend plus Cloudflare Pages Functions, met D1 (SQLite) als database.
+Er is geen build-stap en geen framework-installatie: Alpine.js komt van een CDN.
 
-- **Frontend**: HTML, CSS, Vanilla JavaScript (hosted on GitHub Pages)
-- **Backend**: Google Apps Script Web App
-- **Database**: Google Sheets
+Frontend en API draaien op hetzelfde domein. Daarom is er geen CORS in het spel en
+is er geen proxy nodig om bij `api.ah.nl` te komen: de Function doet die aanroep
+serverside, waar CORS niet bestaat.
 
-## Setup Instructions
-
-### 1. Create Google Sheet
-
-1. Go to [Google Sheets](https://sheets.google.com) and create a new spreadsheet
-2. Name it something like "Grocery List"
-3. Note the spreadsheet URL for later
-
-### 2. Set Up Google Apps Script
-
-1. In your Google Sheet, go to **Extensions > Apps Script**
-2. Delete any existing code in `Code.gs`
-3. Copy the entire contents of `Code.gs` from this repository and paste it
-4. Click **Save** (Ctrl+S)
-
-### 3. Set Admin Code
-
-1. In Apps Script, go to **Project Settings** (gear icon)
-2. Scroll down to **Script Properties**
-3. Click **Add script property**
-4. Set:
-   - Property: `ADMIN_CODE`
-   - Value: Your secret admin code (e.g., `mySecretCode123`)
-5. Click **Save**
-
-### 4. Deploy as Web App
-
-1. In Apps Script, click **Deploy > New deployment**
-2. Click the gear icon next to "Select type" and choose **Web app**
-3. Configure:
-   - Description: "Grocery List API"
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-4. Click **Deploy**
-5. Authorize the app when prompted
-6. Copy the **Web app URL** (looks like `https://script.google.com/macros/s/xxx/exec`)
-
-### 5. Configure Frontend
-
-1. Copy `config.example.js` to `config.js` (if not already done)
-2. Edit `config.js` and replace `YOUR_APPS_SCRIPT_URL` with your Web app URL:
-
-```javascript
-const CONFIG = {
-  API_BASE_URL: "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec",
-};
+```
+index.html            de hele UI
+app.js                Alpine-component
+styles.css            4net-huisstijl
+functions/
+  _middleware.js      IP-controle voor alle routes
+  api/                de endpoints
+lib/                  gedeelde code (AH, database, toegang)
+schema.sql            het databaseschema
 ```
 
-### 6. Deploy to GitHub Pages
+### Endpoints
 
-1. Push all files to your GitHub repository
-2. Go to **Settings > Pages**
-3. Under "Source", select **Deploy from a branch**
-4. Select **main** branch and **/ (root)** folder
-5. Click **Save**
-6. Your site will be available at `https://yourusername.github.io/repository-name/`
+| Route | Wie | Wat |
+|---|---|---|
+| `GET /api/items?status=open\|ordered` | iedereen op de whitelist | lijst ophalen |
+| `POST /api/items` | iedereen op de whitelist | verzoek toevoegen |
+| `PATCH /api/items/:id` | beheerder, of jezelf bij een eigen open verzoek | status of aantal wijzigen |
+| `DELETE /api/items/:id` | beheerder | definitief verwijderen |
+| `POST /api/order-all` | beheerder | alles open op besteld |
+| `GET /api/frequent` | iedereen op de whitelist | vaker besteld |
+| `GET /api/search?q=` | iedereen op de whitelist | AH-producten zoeken |
+| `POST /api/admin` | — | beheerderscode controleren |
 
-## Usage
+De beheerderscode gaat mee als `X-Admin-Code`-header en wordt serverside
+gecontroleerd. In de browser onthoudt de tool hem 30 dagen.
 
-### Adding Items
+### Toegang
 
-1. Fill in your name and the item you need
-2. Optionally add quantity, substitute info, image URL, or AH link
-3. Click "Add to List"
+`functions/_middleware.js` vergelijkt `CF-Connecting-IP` met de variabele
+`ALLOWED_IPS`. Die header zet Cloudflare zelf; de bezoeker kan hem niet vervalsen.
+Losse adressen en CIDR-notatie werken allebei, IPv4 en IPv6:
 
-### Managing Items
-
-- **Close**: Mark an item as purchased/completed
-- **Reopen**: Move a closed item back to open
-- **Delete**: Soft delete an item (requires admin code)
-
-### Bulk Actions
-
-- **Delete Closed Items**: Soft delete all closed items
-- **Delete All Items**: Soft delete all open and closed items
-
-Both require the admin code.
-
-### Export
-
-- **Print**: Opens print dialog with a clean layout
-- **Copy as Text**: Copies open items to clipboard in a simple format
-
-## API Endpoints
-
-All endpoints use the same base URL with an `action` parameter.
-
-### GET `?action=list&status=open|closed|deleted|all`
-
-Returns items filtered by status (default: open).
-
-### POST `?action=add`
-
-Add a new item. Body:
-```json
-{
-  "name": "John",
-  "item": "Milk",
-  "quantity": "2 liters",
-  "substituteFor": "Oat milk",
-  "imageUrl": "https://...",
-  "ahUrl": "https://ah.nl/..."
-}
+```
+185.38.90.170, 2a02:1234:5678::/48
 ```
 
-### POST `?action=setStatus`
+Staat `ALLOWED_IPS` niet ingesteld, dan is de tool voor niemand bereikbaar. Dat is
+opzet: een vergeten instelling mag de deur niet stilletjes openzetten. Wie geweigerd
+wordt, ziet zijn eigen IP-adres op het scherm en kan dat doorsturen.
 
-Change item status. Body:
-```json
-{
-  "id": "item-id",
-  "status": "open|closed|deleted",
-  "adminCode": "required-for-delete"
-}
+## Eenmalige installatie
+
+Alles in de Cloudflare-dashboard, geen command line nodig.
+
+1. Maak een gratis account op [dash.cloudflare.com](https://dash.cloudflare.com).
+2. **Workers & Pages → D1 → Create**, naam `boodschappen`. Open de Console-tab, plak
+   de inhoud van [`schema.sql`](schema.sql) en voer die uit.
+3. **Workers & Pages → Create → Pages → Connect to Git**, kies deze repo, branch
+   `main`. Build command leeg laten, output directory `/`.
+4. **Settings → Bindings → D1**: variabelenaam `DB`, database `boodschappen`. Doe dit
+   voor zowel Production als Preview.
+5. **Settings → Variables and Secrets**:
+   - `ADMIN_CODE` als **Secret** — de beheerderscode.
+   - `ALLOWED_IPS` als gewone variabele — komma-gescheiden lijst.
+6. Deploy opnieuw. Bindings en variabelen worden pas actief bij de volgende
+   deployment, dus één keer **Retry deployment** is nodig.
+
+## Onderhoud
+
+**Collega toevoegen of verwijderen:** de lijst met namen staat bovenin
+[`app.js`](app.js) als `NAMES`.
+
+**Iemand krijgt geen toegang:** laat diegene het IP-adres van de weigerpagina
+doorsturen en voeg het toe aan `ALLOWED_IPS`. Wisselt het adres vaak, gebruik dan
+CIDR (`2a02:1234:5678::/48`) in plaats van losse adressen.
+
+**Verwijderd item terughalen:** verwijderen via de knop is een soft delete. De rij
+staat nog in D1 met een `deleted_at`; in de D1-console kun je `status` terugzetten
+op `open`. Alleen `DELETE /api/items/:id` verwijdert echt.
+
+**Er staan geen geheimen in de repo.** De beheerderscode en de IP-lijst leven als
+omgevingsvariabelen in Cloudflare.
+
+## Lokaal draaien
+
+Er is geen dev-server nodig om aan de CSS of HTML te werken, maar wil je de API
+erbij, dan kan dat met Wrangler:
+
+```bash
+npx wrangler pages dev . --d1 DB
 ```
-
-### POST `?action=bulk`
-
-Bulk status change. Body:
-```json
-{
-  "action": "deleteClosed|deleteAll",
-  "adminCode": "required"
-}
-```
-
-## Data Model
-
-The Google Sheet has these columns:
-
-| Column | Description |
-|--------|-------------|
-| id | Unique identifier |
-| createdAt | ISO timestamp when created |
-| updatedAt | ISO timestamp when last modified |
-| closedAt | ISO timestamp when closed |
-| deletedAt | ISO timestamp when deleted |
-| ip | Client IP (best effort) |
-| userAgent | Client user agent |
-| name | Person who submitted |
-| item | Item name |
-| quantity | Optional quantity |
-| substituteFor | Optional substitute info |
-| imageUrl | Optional image URL |
-| ahUrl | Optional AH product link |
-| status | open, closed, or deleted |
-
-## Security Notes
-
-- Admin code is stored in Apps Script properties (not in code)
-- Admin code is never persisted in browser localStorage
-- Soft delete only - no data is permanently removed
-- All changes are logged with timestamps
-
-## License
-
-MIT

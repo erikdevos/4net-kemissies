@@ -1,992 +1,466 @@
-// Alpine.js Grocery App
-function groceryApp() {
+// Boodschappentool - Alpine.js component.
+// De API draait op hetzelfde domein (/api/...), dus er is geen CORS en geen config.
+
+// Eén plek om collega's toe te voegen of te verwijderen.
+const NAMES = [
+  'Anne', 'Chiara', 'Christiaan', 'Eddie', 'Elde', 'Erik', 'Jean-Pierre',
+  'Julian', 'Michel', 'Peggy', 'Percy', 'Remco', 'Richard', 'Roel',
+  'Sabien', 'Sander', 'Steve',
+];
+
+const STORAGE_NAME = 'boodschappen_naam';
+const STORAGE_ADMIN = 'boodschappen_admin';
+const ADMIN_DAYS = 30;
+const MAX_QUANTITY = 10;
+
+function boodschappen() {
   return {
-    // API Configuration
-    API_BASE_URL: typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '',
-    
-    // State
-    currentStatus: 'open',
-    loading: false,
-    formLoading: false,
-    bulkLoading: false,
-    copyLoading: false,
-    
-    // Data
-    items: {
-      open: [],
-      closed: [],
-      archive: [],
-      deleted: []
-    },
-    
-    // Form
-    form: {
-      ahUrl: '',
-      item: '',
-      imageUrl: '',
-      quantity: 1,
-      substituteFor: '',
-      name: ''
-    },
-    
-    // Watchers
-    'form.name'(newValue) {
-      console.log('[form.name watcher] Name changed to:', newValue);
-      if (newValue) {
-        this.storeUserName(newValue);
-      }
-    },
-    
-    // Messages
-    formMessage: { text: '', type: '' },
-    listMessage: { text: '', type: '' },
-    
-    // Notification system
-    notifications: [],
-    
-    // Admin
-    showAdminModal: false,
-    adminCodeInput: '',
+    names: NAMES,
+    maxQuantity: MAX_QUANTITY,
+
+    tab: 'open',
+    loading: true,
+    submitting: false,
+    busyId: null,
+    bulkBusy: false,
+
+    items: { open: [], ordered: [] },
+    frequent: [],
+
+    form: { product: null, quantity: 1, note: '', requester: '' },
+
+    query: '',
+    results: [],
+    searching: false,
+    resultsOpen: false,
+    searchError: '',
+    searchTimer: null,
+
     adminCode: null,
-    pendingAdminAction: null,
-    
-    // Cache
-    cache: new Map(),
-    lastFetch: new Map(),
-    cacheExpiry: 5 * 60 * 1000, // 5 minutes
-    
-    // Constants
-    ADMIN_CODE_STORAGE_KEY: 'grocery_admin_code',
-    ADMIN_CODE_EXPIRY_DAYS: 30,
-    NAME_STORAGE_KEY: 'grocery_user_name',
-    
-    // Product Search
-    searchQuery: '',
-    searchResults: [],
-    searchLoading: false,
-    showSearchResults: false,
-    searchDebounceTimer: null,
-    
-    // Computed
-    get currentItems() {
-      return this.items[this.currentStatus] || [];
-    },
-    
-    get isAdmin() {
-      return !!this.adminCode;
-    },
-    
-    get deleteButtonText() {
-      if (this.currentStatus === 'open') return 'Verwijder alle verzoeken';
-      if (this.currentStatus === 'closed') return 'Verwijder bestelde items';
-      if (this.currentStatus === 'archive') return 'Verwijder archief';
-      if (this.currentStatus === 'deleted') return 'Prullenbak legen';
-      return 'Verwijder items';
-    },
-    
-    // Lifecycle
+    showAdminModal: false,
+    adminInput: '',
+    adminError: '',
+
+    toasts: [],
+
+    // --- Levenscyclus ---
+
     init() {
-      console.log('[Alpine App] Initializing...');
-      console.log('[Alpine App] API Base URL:', this.API_BASE_URL);
-      
-      // Load stored admin code
-      this.adminCode = this.getStoredAdminCode();
-      
-      // Load stored user name
-      const storedName = this.getStoredUserName();
-      this.form.name = storedName;
-      console.log('[Alpine App] Loaded stored name:', storedName);
-      
-      // Run one-time migration to populate archive
-      this.migrateClosedToArchive();
-      
-      // Load initial items
-      this.loadItems();
-      
-      // Preload other tabs
-      setTimeout(() => this.preloadTabs(), 1000);
+      this.form.requester = this.readName();
+      this.adminCode = this.readAdminCode();
+      this.loadTab();
     },
-    
-    // API Methods
-    async apiRequest(endpoint, options = {}) {
-      const startTime = performance.now();
-      console.log('[API] Request:', endpoint);
-      
+
+    get isAdmin() {
+      return Boolean(this.adminCode);
+    },
+
+    get visibleItems() {
+      return this.tab === 'ordered' ? this.items.ordered : this.items.open;
+    },
+
+    get openCount() {
+      return this.items.open.reduce((total, item) => total + item.quantity, 0);
+    },
+
+    get openCountLabel() {
+      const count = this.openCount;
+      return `${count} ${count === 1 ? 'stuk' : 'stuks'}`;
+    },
+
+    // --- API ---
+
+    async api(path, { method = 'GET', body } = {}) {
+      const headers = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (this.adminCode) headers['X-Admin-Code'] = this.adminCode;
+
+      const response = await fetch(`/api${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      let data = {};
       try {
-        const clientIP = await this.getClientIP();
-        const userAgent = navigator.userAgent;
-        
-        const params = new URLSearchParams({
-          ip: clientIP,
-          userAgent: userAgent,
-          ...options.params
-        });
-        
-        const url = `${this.API_BASE_URL}${endpoint}&${params.toString()}`;
-        
-        const response = await fetch(url, { method: 'GET' });
-        const duration = performance.now() - startTime;
-        
-        console.log(`[API] Request completed in ${duration.toFixed(0)}ms`);
-        
-        if (!response.ok) {
-          if (response.status === 403) {
-            document.body.innerHTML = `
-              <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
-                <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
-                  <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
-                  <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
-                  <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
-                </div>
-              </div>
-            `;
-            throw new Error('Access denied - IP not authorized');
-          }
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        data = await response.json();
+      } catch {
+        // Geen JSON terug: laat de statuscode het verhaal vertellen.
+      }
+
+      if (!response.ok) {
+        // Een afgekeurde admincode betekent dat de opgeslagen code niet meer klopt.
+        if (response.status === 403 && this.adminCode && data.error === 'Admincode vereist') {
+          this.forgetAdmin();
         }
-        
-        const data = await response.json();
-        
-        if (!data.ok) {
-          if (data.error && data.error.includes('IP not authorized')) {
-            document.body.innerHTML = `
-              <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
-                <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
-                  <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
-                  <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
-                  <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
-                </div>
-              </div>
-            `;
-          }
-          throw new Error(data.error || 'Request failed');
-        }
-        
-        return data;
-      } catch (error) {
-        console.error('[API] Request failed:', error);
-        throw error;
+        throw new Error(data.error || `Er ging iets mis (${response.status})`);
       }
+
+      return data;
     },
-    
-    async getClientIP() {
-      try {
-        const response = await fetch('https://api.ipify.org?format=json');
-        const data = await response.json();
-        return data.ip;
-      } catch (error) {
-        console.error('[getClientIP] Error:', error);
-        return 'unknown';
-      }
-    },
-    
-    // Cache Methods
-    getCachedItems(status) {
-      const cached = this.cache.get(status);
-      const lastFetch = this.lastFetch.get(status) || 0;
-      
-      if (cached && (Date.now() - lastFetch) < this.cacheExpiry) {
-        console.log('[Cache] Hit for status:', status);
-        return cached;
-      }
-      
-      console.log('[Cache] Miss for status:', status);
-      return null;
-    },
-    
-    setCachedItems(status, items) {
-      this.cache.set(status, items);
-      this.lastFetch.set(status, Date.now());
-      console.log('[Cache] Set for status:', status, 'with', items.length, 'items');
-    },
-    
-    invalidateCache(status) {
-      this.cache.delete(status);
-      this.lastFetch.delete(status);
-      console.log('[Cache] Invalidated for status:', status);
-    },
-    
-    clearCache() {
-      this.cache.clear();
-      this.lastFetch.clear();
-      console.log('[Cache] Cleared all');
-    },
-    
-    // Data Loading
-    async loadItems() {
-      console.log('[loadItems] Loading items for status:', this.currentStatus);
-      
+
+    // --- Laden ---
+
+    async loadTab() {
       this.loading = true;
-      
-      // Check cache first
-      const cachedItems = this.getCachedItems(this.currentStatus);
-      if (cachedItems) {
-        console.log('[loadItems] Using cached items for', this.currentStatus, ':', cachedItems.length, 'items');
-        this.items[this.currentStatus] = cachedItems;
+      try {
+        if (this.tab === 'frequent') {
+          const { products } = await this.api('/frequent');
+          this.frequent = products;
+        } else {
+          const status = this.tab === 'ordered' ? 'ordered' : 'open';
+          const { items } = await this.api(`/items?status=${status}`);
+          this.items[status] = items;
+        }
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
         this.loading = false;
+      }
+    },
+
+    switchTab(tab) {
+      if (this.tab === tab) return;
+      this.tab = tab;
+      this.loadTab();
+    },
+
+    // --- Zoeken bij AH ---
+
+    onSearchInput() {
+      clearTimeout(this.searchTimer);
+      this.searchError = '';
+
+      const query = this.query.trim();
+      if (query.length < 2) {
+        this.results = [];
+        this.resultsOpen = false;
+        this.searching = false;
         return;
       }
-      
+
+      this.searching = true;
+      this.searchTimer = setTimeout(() => this.runSearch(query), 250);
+    },
+
+    async runSearch(query) {
       try {
-        console.log('[loadItems] No cache found, fetching from API for', this.currentStatus);
-        const data = await this.apiRequest(`?action=list&status=${this.currentStatus}`);
-        this.items[this.currentStatus] = data.items || [];
-        this.setCachedItems(this.currentStatus, this.items[this.currentStatus]);
-        console.log('[loadItems] Loaded', this.items[this.currentStatus].length, 'items for', this.currentStatus);
+        const { products } = await this.api(`/search?q=${encodeURIComponent(query)}`);
+        // Een trager antwoord op een oudere zoekterm mag een nieuwere niet overschrijven.
+        if (this.query.trim() !== query) return;
+        this.results = products;
+        this.resultsOpen = true;
+        this.searchError = products.length ? '' : 'Geen producten gevonden';
       } catch (error) {
-        console.error('[loadItems] Error:', error);
-        this.showNotification(error.message, 'error');
+        this.results = [];
+        this.resultsOpen = false;
+        this.searchError = error.message;
       } finally {
-        this.loading = false;
+        this.searching = false;
       }
     },
-    
-    async refreshItems() {
-      console.log('[refreshItems] Force refreshing items for status:', this.currentStatus);
-      
-      this.loading = true;
-            
-      const startTime = Date.now();
-      
-      try {
-        // Invalidate cache first
-        this.invalidateCache(this.currentStatus);
-        
-        const data = await this.apiRequest(`?action=list&status=${this.currentStatus}`);
-        this.items[this.currentStatus] = data.items || [];
-        this.setCachedItems(this.currentStatus, this.items[this.currentStatus]);
-        console.log('[refreshItems] Refreshed', this.items[this.currentStatus].length, 'items');
-      } catch (error) {
-        console.error('[refreshItems] Error:', error);
-        this.showNotification(error.message, 'error');
-      } finally {
-        // Ensure minimum loading time of 500ms for better UX
-        const elapsed = Date.now() - startTime;
-        if (elapsed < 500) {
-          setTimeout(() => {
-            this.loading = false;
-          }, 500 - elapsed);
-        } else {
-          this.loading = false;
-        }
-      }
-    },
-    
-    async preloadTabs() {
-      const statuses = ['open', 'closed', 'archive', 'deleted'].filter(s => s !== this.currentStatus);
-      
-      for (const status of statuses) {
-        if (!this.getCachedItems(status)) {
-          try {
-            console.log(`[Preload] Loading ${status} items...`);
-            const data = await this.apiRequest(`?action=list&status=${status}`);
-            this.items[status] = data.items || [];
-            this.setCachedItems(status, this.items[status]);
-          } catch (error) {
-            console.error(`[Preload] Failed to load ${status}:`, error);
-          }
-        }
-      }
-    },
-    
-    // Tab Switching
-    switchTab(status) {
-      console.log('[switchTab] Switching to:', status);
-      this.currentStatus = status;
-      console.log('[switchTab] Current status set, calling loadItems...');
-      this.loadItems();
-    },
-    
-    // Form Handling
-    extractProductNameFromUrl() {
-      if (!this.form.ahUrl) return;
-      
-      try {
-        const url = new URL(this.form.ahUrl);
-        const pathParts = url.pathname.split('/');
-        
-        // AH URLs typically have format: /producten/product/wi123456/product-name
-        // Find the product name part (last segment)
-        const productNameSlug = pathParts[pathParts.length - 1];
-        
-        if (productNameSlug && productNameSlug !== 'product' && productNameSlug !== 'producten') {
-          // Convert slug to readable name: "melk-halfvol-1l" -> "Melk halfvol 1l"
-          const productName = productNameSlug
-            .split('-')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
-          
-          // Only auto-fill if the item field is empty
-          if (!this.form.item || this.form.item.trim() === '') {
-            this.form.item = productName;
-            console.log('[extractProductNameFromUrl] Auto-filled product name:', productName);
-          }
-        }
-      } catch (error) {
-        console.error('[extractProductNameFromUrl] Error parsing URL:', error);
-        // Silently fail - invalid URL format
-      }
-    },
-    
-    async handleSubmit() {
-      console.log('[handleSubmit] Submitting form');
-      
-      this.formLoading = true;
-      this.formMessage = { text: '', type: '' };
-      
-      try {
-        // Validate product selection
-        if (!this.form.item || !this.form.ahUrl) {
-          this.formMessage = { text: 'Selecteer eerst een product via de zoekfunctie', type: 'error' };
-          this.formLoading = false;
-          return;
-        }
-        
-        // Validate quantity
-        const quantity = parseInt(this.form.quantity) || 1;
-        console.log('[handleSubmit] Quantity:', quantity);
-        if (quantity < 1) {
-          console.log('[handleSubmit] Quantity too low');
-          this.formMessage = { text: 'Hoeveelheid moet minimaal 1 zijn', type: 'error' };
-          this.formLoading = false;
-          return;
-        }
-        if (quantity > 10) {
-          console.log('[handleSubmit] Quantity too high');
-          this.formMessage = { text: 'Hoeveelheid mag maximaal 10 zijn', type: 'error' };
-          this.formLoading = false;
-          return;
-        }
-        
-        // Check for duplicates in frontend (for immediate feedback)
-        const openItems = this.items.open || [];
-        const closedItems = this.items.closed || [];
-        const allItems = [...openItems, ...closedItems];
-        console.log('[handleSubmit] Checking duplicates in', allItems.length, 'items');
-        
-        // Check duplicate by AH URL
-        if (this.form.ahUrl && allItems.length > 0) {
-          const urlDuplicate = allItems.find(item => item.ahUrl === this.form.ahUrl);
-          if (urlDuplicate) {
-            console.log('[handleSubmit] Duplicate URL found:', urlDuplicate);
-            this.formMessage = { text: 'Dit product is al toegevoegd (zelfde AH link)', type: 'error' };
-            this.formLoading = false;
-            return;
-          }
-        }
-        
-        // Check duplicate by product name (case-insensitive)
-        if (allItems.length > 0) {
-          const nameDuplicate = allItems.find(item => 
-            item.item && item.item.toLowerCase() === this.form.item.toLowerCase()
-          );
-          if (nameDuplicate) {
-            console.log('[handleSubmit] Duplicate name found:', nameDuplicate);
-            this.formMessage = { text: 'Dit product is al toegevoegd (zelfde productnaam)', type: 'error' };
-            this.formLoading = false;
-            return;
-          }
-        }
-        
-        console.log('[handleSubmit] Validation passed, preparing form data');
-        const formData = {
-          ahUrl: this.form.ahUrl,
-          item: this.form.item,
-          imageUrl: this.form.imageUrl,
-          quantity: quantity,
-          substituteFor: this.form.substituteFor,
-          name: this.form.name
-        };
-        
-        console.log('[handleSubmit] Calling API with:', formData);
-        await this.apiRequest('?action=add', { params: formData });
-        
-        this.showNotification('Product toegevoegd!', 'success');
-        this.clearForm();
-        
-        // Invalidate cache and reload
-        this.invalidateCache('open');
-        this.loadItems();
-        
-      } catch (error) {
-        console.error('[handleSubmit] Error:', error);
-        this.showNotification(error.message, 'error');
-      } finally {
-        this.formLoading = false;
-      }
-    },
-    
-    clearForm() {
-      this.form = {
-        ahUrl: '',
-        item: '',
-        imageUrl: '',
-        quantity: 1,
-        substituteFor: '',
-        name: ''
-      };
-      
-      // Also clear search state
-      this.searchQuery = '';
-      this.searchResults = [];
-      this.showSearchResults = false;
-    },
-    
-    // Item Actions
-    async migrateClosedToArchive() {
-      console.log('[migrateClosedToArchive] Starting migration...');
-      
-      try {
-        const data = await this.apiRequest('?action=migrateClosedToArchive');
-        console.log('[migrateClosedToArchive] Migration complete:', data);
-        
-        if (data.migrated > 0) {
-          // Invalidate archive cache to force reload
-          this.invalidateCache('archive');
-          console.log(`[migrateClosedToArchive] Migrated ${data.migrated} items to archive`);
-        }
-      } catch (error) {
-        console.error('[migrateClosedToArchive] Error:', error);
-        // Don't show error notification - this is a background operation
-      }
-    },
-    
-    addArchiveItemToList(item) {
-      console.log('[addArchiveItemToList] Prefilling form with archive item:', item);
-      
-      // Prefill the form with archive item data
-      this.form.ahUrl = item.ahUrl || '';
-      this.form.item = item.item;
-      this.form.imageUrl = item.imageUrl || '';
+
+    selectProduct(product) {
+      this.form.product = product;
       this.form.quantity = 1;
-      this.form.substituteFor = '';
-      // Keep the stored name if available
-      
-      // Clear search state
-      this.searchQuery = '';
-      this.searchResults = [];
-      this.showSearchResults = false;
-      
-      // Scroll to form
-      const formSection = document.getElementById('formSection');
-      if (formSection) {
-        formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      
-      this.showNotification('Product toegevoegd aan formulier. Vul je naam en hoeveelheid in.', 'success');
+      this.query = '';
+      this.results = [];
+      this.resultsOpen = false;
+      this.searchError = '';
+      this.$nextTick(() => this.$refs.quantity?.focus());
     },
-    
-    async addItemToArchive(id) {
-      console.log('[addItemToArchive] Adding item to archive:', id);
-      
-      try {
-        // Get the current item data
-        const item = this.items.closed.find(item => item.id === id);
-        if (!item) {
-          console.error('[addItemToArchive] Item not found in closed items');
-          return;
-        }
-        
-        // Create archive version of the item (without date/name metadata)
-        const archiveItem = {
-          id: Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8), // Generate new unique ID
-          item: item.item,
-          imageUrl: item.imageUrl || '',
-          ahUrl: item.ahUrl || '',
-          status: 'archive',
-          createdAt: new Date().toISOString(), // New creation time for archive
-          updatedAt: new Date().toISOString(),
-          closedAt: new Date().toISOString(),
-          deletedAt: null,
-          ip: item.ip,
-          userAgent: item.userAgent,
-          name: '', // Remove name for archive
-          quantity: 1, // Reset to default quantity
-          substituteFor: '' // Remove substitute for archive
-        };
-        
-        // Add to archive via API
-        await this.apiRequest('?action=addToArchive', {
-          params: archiveItem
-        });
-        
-        console.log('[addItemToArchive] Successfully added to archive');
-        
-      } catch (error) {
-        console.error('[addItemToArchive] Error:', error);
-        // Don't show error notification since this is background operation
-      }
+
+    clearProduct() {
+      this.form.product = null;
+      this.form.quantity = 1;
+      this.form.note = '';
     },
-    
-    async setItemStatus(id, status, buttonEl) {
-      console.log('[setItemStatus] Setting item', id, 'to', status);
-      
-      const requiresAdmin = status === 'deleted';
-      
-      if (requiresAdmin && !this.adminCode) {
-        this.pendingAdminAction = { type: 'setStatus', id, status };
-        this.openAdminModal();
-        return;
-      }
-      
-      if (buttonEl) buttonEl.classList.add('loading');
-      
-      try {
-        await this.apiRequest('?action=setStatus', {
-          params: {
-            id,
-            status,
-            adminCode: requiresAdmin ? this.adminCode : undefined
-          }
-        });
-        
-        // If item was marked as closed (ordered), also add it to archive
-        if (status === 'closed') {
-          console.log('[setItemStatus] Adding ordered item to archive...');
-          await this.addItemToArchive(id);
-          
-          // Force reload archive data if user is on archive tab
-          if (this.currentStatus === 'archive') {
-            console.log('[setItemStatus] User is on archive tab, reloading archive...');
-            this.invalidateCache('archive');
-            const data = await this.apiRequest(`?action=list&status=archive`);
-            console.log('[setItemStatus] Archive data loaded:', data);
-            this.items.archive = data.items || [];
-            this.setCachedItems('archive', this.items.archive);
-            console.log('[setItemStatus] Archive items updated:', this.items.archive);
-          }
-        }
-        
-        // Invalidate other caches
-        this.invalidateCache('open');
-        this.invalidateCache('closed');
-        this.invalidateCache('deleted');
-        
-        // If we're deleting from archive, invalidate and reload archive cache
-        if (this.currentStatus === 'archive') {
-          console.log('[setItemStatus] Deleting from archive, reloading archive...');
-          this.invalidateCache('archive');
-          const data = await this.apiRequest(`?action=list&status=archive`);
-          this.items.archive = data.items || [];
-          this.setCachedItems('archive', this.items.archive);
-          console.log('[setItemStatus] Archive reloaded after delete:', this.items.archive);
-        }
-        
-        // Load current tab items
-        await this.loadItems();
-      } catch (error) {
-        console.error('[setItemStatus] Error:', error);
-        this.showNotification(error.message, 'error');
-        if (error.message.includes('admin')) {
-          this.adminCode = null;
-        }
-      } finally {
-        if (buttonEl) buttonEl.classList.remove('loading');
-      }
-    },
-    
-    deleteItem(id, buttonEl) {
-      console.log('[deleteItem] Deleting item:', id);
-      
-      const storedCode = this.getStoredAdminCode();
-      if (storedCode) {
-        this.adminCode = storedCode;
-        if (confirm('Weet je zeker dat je dit item wilt verwijderen?')) {
-          this.setItemStatus(id, 'deleted', buttonEl);
-        }
-      } else {
-        this.pendingAdminAction = { type: 'deleteItem', id };
-        this.openAdminModal();
-      }
-    },
-    
-    permanentDeleteItem(id, buttonEl) {
-      console.log('[permanentDeleteItem] Permanently deleting item:', id);
-      
-      const storedCode = this.getStoredAdminCode();
-      if (storedCode) {
-        this.adminCode = storedCode;
-        if (confirm('⚠️ WAARSCHUWING: Dit verwijdert dit product PERMANENT uit de database.\n\nDeze actie kan NIET ongedaan worden gemaakt.\n\nWeet je zeker dat je door wilt gaan?')) {
-          this.executePermanentDelete(id, buttonEl);
-        }
-      } else {
-        this.pendingAdminAction = { type: 'permanentDelete', id };
-        this.openAdminModal();
-      }
-    },
-    
-    async executePermanentDelete(id, buttonEl) {
-      console.log('[executePermanentDelete] Executing permanent delete for:', id);
-      
-      if (buttonEl) buttonEl.classList.add('loading');
-      
-      try {
-        await this.apiRequest('?action=permanentDeleteItem', {
-          params: {
-            id,
-            adminCode: this.adminCode
-          }
-        });
-        
-        this.showNotification('Product permanent verwijderd', 'success');
-        
-        // Invalidate cache and reload
-        this.invalidateCache('deleted');
-        if (this.currentStatus === 'deleted') {
-          await this.loadItems();
-        }
-        
-      } catch (error) {
-        console.error('[executePermanentDelete] Error:', error);
-        this.showNotification(error.message, 'error');
-        if (error.message.includes('admin')) {
-          this.adminCode = null;
-        }
-      } finally {
-        if (buttonEl) buttonEl.classList.remove('loading');
-      }
-    },
-    
-    // Bulk Actions
-    async handleDeleteTabItems() {
-      let action;
-      if (this.currentStatus === 'open') action = 'deleteOpen';
-      else if (this.currentStatus === 'closed') action = 'deleteClosed';
-      else if (this.currentStatus === 'archive') action = 'deleteArchive';
-      else if (this.currentStatus === 'deleted') action = 'permanentDelete';
-      
-      const storedCode = this.getStoredAdminCode();
-      if (storedCode) {
-        this.adminCode = storedCode;
-        
-        let confirmMessage;
-        if (action === 'deleteOpen') {
-          confirmMessage = 'Weet je zeker dat je alle open items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.';
-        } else if (action === 'deleteClosed') {
-          confirmMessage = 'Weet je zeker dat je alle bestelde items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.';
-        } else if (action === 'deleteArchive') {
-          confirmMessage = 'Weet je zeker dat je alle archief items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.';
-        } else if (action === 'permanentDelete') {
-          confirmMessage = '⚠️ WAARSCHUWING: Dit verwijdert alle items in de prullenbak PERMANENT!\n\nDeze actie kan NIET ongedaan worden gemaakt.\n\nWeet je zeker dat je door wilt gaan?';
-        }
-        
-        if (confirm(confirmMessage)) {
-          await this.executeBulkAction(action);
-        }
-      } else {
-        this.pendingAdminAction = { type: 'bulk', action };
-        this.openAdminModal();
-      }
-    },
-    
-    async executeBulkAction(action) {
-      this.bulkLoading = true;
-      
-      try {
-        await this.apiRequest(`?action=bulk&bulkAction=${action}`, {
-          params: { adminCode: this.adminCode }
-        });
-        
-        const successMessage = action === 'permanentDelete' ? 'Prullenbak geleegd' : 'Items verwijderd';
-        this.showNotification(successMessage, 'success');
-        
-        this.clearCache();
-        await this.loadItems();
-      } catch (error) {
-        console.error('[executeBulkAction] Error:', error);
-        this.showNotification(error.message, 'error');
-      } finally {
-        this.bulkLoading = false;
-      }
-    },
-    
-    // Copy to Clipboard
-    async handleCopyText() {
-      this.copyLoading = true;
-      
-      const startTime = Date.now();
-      
-      try {
-        let items = this.getCachedItems('open') || this.items.open;
-        
-        if (!items || items.length === 0) {
-          const data = await this.apiRequest('?action=list&status=open');
-          items = data.items || [];
-        }
-        
-        if (items.length === 0) {
-          this.showNotification('Geen open items om te kopiëren', 'error');
-          this.copyLoading = false;
-          return;
-        }
-        
-        const text = items.map(item => {
-          let line = '';
-          if (item.quantity) line += `${item.quantity}x `;
-          line += item.item;
-          if (item.substituteFor) line += ` (in plaats van ${item.substituteFor})`;
-          line += ` - ${item.name}`;
-          return line;
-        }).join('\n');
-        
-        await navigator.clipboard.writeText(text);
-        this.showNotification('Lijst gekopieerd naar klembord!', 'success');
-      } catch (error) {
-        this.showNotification('Kopiëren mislukt: ' + error.message, 'error');
-      } finally {
-        // Ensure minimum loading time of 800ms for better UX
-        const elapsed = Date.now() - startTime;
-        if (elapsed < 800) {
-          setTimeout(() => {
-            this.copyLoading = false;
-          }, 800 - elapsed);
-        } else {
-          this.copyLoading = false;
-        }
-      }
-    },
-    
-    // Admin Modal
-    openAdminModal() {
-      this.showAdminModal = true;
+
+    // Product uit "Vaker besteld" terugzetten in het formulier.
+    reuse(product) {
+      this.selectProduct({
+        productId: product.productId,
+        title: product.title,
+        brand: product.brand,
+        unitSize: product.unitSize,
+        imageUrl: product.imageUrl,
+        productUrl: product.productUrl,
+        price: product.price,
+      });
+      this.switchTab('open');
       this.$nextTick(() => {
-        this.$refs.adminInput?.focus();
+        document.getElementById('formulier')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     },
-    
-    closeAdminModal() {
-      this.showAdminModal = false;
-      this.adminCodeInput = '';
-      this.pendingAdminAction = null;
-    },
-    
-    logoutAdmin() {
-      this.adminCode = null;
-      localStorage.removeItem(this.ADMIN_CODE_STORAGE_KEY);
-      this.showNotification('Uitgelogd als admin', 'success');
-      
-      // If on deleted tab, switch to archive tab
-      if (this.currentStatus === 'deleted') {
-        this.switchTab('archive');
+
+    // --- Verzoek indienen ---
+
+    async submit() {
+      if (this.submitting) return;
+
+      if (!this.form.product) {
+        this.toast('Zoek en kies eerst een product', 'error');
+        return;
       }
-    },
-    
-    async confirmAdminAction() {
-      const code = this.adminCodeInput.trim();
-      
-      if (!code) return;
-      
-      const actionToExecute = this.pendingAdminAction;
-      this.closeAdminModal();
-      
+      if (!this.form.requester) {
+        this.toast('Kies je naam', 'error');
+        return;
+      }
+
+      this.submitting = true;
       try {
-        // Validate admin code using dedicated endpoint
-        await this.apiRequest('?action=validateAdmin', { 
-          params: { adminCode: code } 
+        const product = this.form.product;
+        const { merged } = await this.api('/items', {
+          method: 'POST',
+          body: {
+            requester: this.form.requester,
+            productId: product.productId,
+            title: product.title,
+            brand: product.brand,
+            unitSize: product.unitSize,
+            imageUrl: product.imageUrl,
+            productUrl: product.productUrl,
+            price: product.price,
+            quantity: this.form.quantity,
+            note: this.form.note,
+          },
         });
-        
-        // If successful, set the admin code
-        this.adminCode = code;
-        this.storeAdminCode(code);
-        this.showNotification('Admin login succesvol', 'success');
-        
-        // Execute the pending action
-        if (!actionToExecute) return;
-        
-        if (actionToExecute.type === 'bulk') {
-          await this.executeBulkAction(actionToExecute.action);
-        } else if (actionToExecute.type === 'deleteItem') {
-          await this.setItemStatus(actionToExecute.id, 'deleted');
-        } else if (actionToExecute.type === 'permanentDelete') {
-          await this.executePermanentDelete(actionToExecute.id);
-        } else if (actionToExecute.type === 'setStatus') {
-          await this.setItemStatus(actionToExecute.id, actionToExecute.status);
-        }
-        
+
+        this.toast(merged ? 'Aantal opgehoogd' : 'Toegevoegd aan de lijst');
+        this.clearProduct();
+
+        this.tab = 'open';
+        await this.loadTab();
       } catch (error) {
-        console.error('[confirmAdminAction] Admin validation failed:', error);
-        this.showNotification('Ongeldige admin code', 'error');
-        // Don't set admin code on failed validation
+        this.toast(error.message, 'error');
+      } finally {
+        this.submitting = false;
       }
     },
-    
-    // Admin Code Storage
-    getStoredAdminCode() {
+
+    // --- Acties op items ---
+
+    isMine(item) {
+      return (
+        item.status === 'open' &&
+        Boolean(this.form.requester) &&
+        item.requester.toLowerCase() === this.form.requester.toLowerCase()
+      );
+    },
+
+    canEdit(item) {
+      return this.isAdmin || this.isMine(item);
+    },
+
+    async changeQuantity(item, delta) {
+      const quantity = Math.min(Math.max(item.quantity + delta, 1), MAX_QUANTITY);
+      if (quantity === item.quantity) return;
+
+      this.busyId = item.id;
       try {
-        const stored = localStorage.getItem(this.ADMIN_CODE_STORAGE_KEY);
+        const { item: updated } = await this.api(`/items/${item.id}`, {
+          method: 'PATCH',
+          body: { quantity, requester: this.form.requester },
+        });
+        Object.assign(item, updated);
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
+        this.busyId = null;
+      }
+    },
+
+    async setStatus(item, status, confirmText) {
+      if (confirmText && !confirm(confirmText)) return;
+
+      this.busyId = item.id;
+      try {
+        await this.api(`/items/${item.id}`, {
+          method: 'PATCH',
+          body: { status, requester: this.form.requester },
+        });
+        await this.loadTab();
+        this.toast(this.statusMessage(status));
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
+        this.busyId = null;
+      }
+    },
+
+    statusMessage(status) {
+      if (status === 'ordered') return 'Op besteld gezet';
+      if (status === 'open') return 'Teruggezet op de lijst';
+      return 'Verwijderd';
+    },
+
+    async orderAll() {
+      if (this.items.open.length === 0) return;
+      if (!confirm(`Alle ${this.items.open.length} verzoeken op besteld zetten?`)) return;
+
+      this.bulkBusy = true;
+      try {
+        const { ordered } = await this.api('/order-all', { method: 'POST' });
+        await this.loadTab();
+        this.toast(`${ordered} ${ordered === 1 ? 'item' : 'items'} op besteld gezet`);
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
+        this.bulkBusy = false;
+      }
+    },
+
+    // --- Lijst kopieren ---
+
+    async copyList() {
+      const items = this.items.open;
+      if (items.length === 0) {
+        this.toast('De lijst is leeg', 'error');
+        return;
+      }
+
+      // Dezelfde boodschap van meerdere mensen wordt een regel met het totaal.
+      const grouped = new Map();
+      for (const item of items) {
+        const key = item.productId || item.title.toLowerCase();
+        const entry = grouped.get(key) || { title: item.title, quantity: 0, names: [], notes: [] };
+        entry.quantity += item.quantity;
+        if (!entry.names.includes(item.requester)) entry.names.push(item.requester);
+        if (item.note && !entry.notes.includes(item.note)) entry.notes.push(item.note);
+        grouped.set(key, entry);
+      }
+
+      const heading = `Boodschappenlijst ${new Date().toLocaleDateString('nl-NL', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })}`;
+
+      const lines = [...grouped.values()].map((entry) => {
+        let line = `${entry.quantity}x ${entry.title} (${entry.names.join(', ')})`;
+        if (entry.notes.length) line += ` - ${entry.notes.join('; ')}`;
+        return line;
+      });
+
+      try {
+        await navigator.clipboard.writeText([heading, '', ...lines].join('\n'));
+        this.toast('Lijst gekopieerd');
+      } catch {
+        this.toast('Kopieren lukte niet', 'error');
+      }
+    },
+
+    // --- Beheer ---
+
+    openAdminModal() {
+      this.adminInput = '';
+      this.adminError = '';
+      this.showAdminModal = true;
+      this.$nextTick(() => this.$refs.adminInput?.focus());
+    },
+
+    async confirmAdmin() {
+      const code = this.adminInput.trim();
+      if (!code) return;
+
+      const previous = this.adminCode;
+      this.adminCode = code;
+      try {
+        await this.api('/admin', { method: 'POST' });
+        this.storeAdminCode(code);
+        this.showAdminModal = false;
+        this.toast('Ingelogd als beheerder');
+        await this.loadTab();
+      } catch {
+        this.adminCode = previous;
+        this.adminError = 'Die code klopt niet';
+      }
+    },
+
+    logoutAdmin() {
+      this.forgetAdmin();
+      this.toast('Uitgelogd');
+      this.loadTab();
+    },
+
+    forgetAdmin() {
+      this.adminCode = null;
+      try {
+        localStorage.removeItem(STORAGE_ADMIN);
+      } catch {
+        // localStorage geblokkeerd; niets aan te doen.
+      }
+    },
+
+    storeAdminCode(code) {
+      try {
+        const expiresAt = Date.now() + ADMIN_DAYS * 24 * 60 * 60 * 1000;
+        localStorage.setItem(STORAGE_ADMIN, JSON.stringify({ code, expiresAt }));
+      } catch {
+        // Niet kunnen onthouden is vervelend, niet fataal.
+      }
+    },
+
+    readAdminCode() {
+      try {
+        const stored = localStorage.getItem(STORAGE_ADMIN);
         if (!stored) return null;
-        
-        const { code, expiry } = JSON.parse(stored);
-        if (Date.now() > expiry) {
-          localStorage.removeItem(this.ADMIN_CODE_STORAGE_KEY);
+        const { code, expiresAt } = JSON.parse(stored);
+        if (!code || Date.now() > expiresAt) {
+          localStorage.removeItem(STORAGE_ADMIN);
           return null;
         }
-        
         return code;
-      } catch (e) {
-        console.error('[getStoredAdminCode] Error:', e);
+      } catch {
         return null;
       }
     },
-    
-    storeAdminCode(code) {
+
+    // --- Naam onthouden ---
+
+    rememberName() {
       try {
-        const expiry = Date.now() + (this.ADMIN_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-        localStorage.setItem(this.ADMIN_CODE_STORAGE_KEY, JSON.stringify({ code, expiry }));
-        console.log('[storeAdminCode] Admin code stored for 30 days');
-      } catch (e) {
-        console.error('[storeAdminCode] Error:', e);
+        localStorage.setItem(STORAGE_NAME, this.form.requester);
+      } catch {
+        // Zie boven.
       }
     },
-    
-    // User Name Storage
-    getStoredUserName() {
+
+    readName() {
       try {
-        const stored = localStorage.getItem(this.NAME_STORAGE_KEY);
-        console.log('[getStoredUserName] Retrieved name:', stored);
-        return stored || '';
-      } catch (e) {
-        console.error('[getStoredUserName] Error:', e);
+        const stored = localStorage.getItem(STORAGE_NAME);
+        return NAMES.includes(stored) ? stored : '';
+      } catch {
         return '';
       }
     },
-    
-    storeUserName(name) {
-      try {
-        localStorage.setItem(this.NAME_STORAGE_KEY, name);
-        console.log('[storeUserName] User name stored:', name);
-      } catch (e) {
-        console.error('[storeUserName] Error:', e);
-      }
-    },
-    
-    // Notification System
-    showNotification(text, type = 'success', duration = 4000) {
-      const index = this.notifications.length;
-      const notification = {
-        id: Date.now() + Math.random(),
-        text,
-        type,
-        hiding: false,
-        index: index
-      };
-      
-      this.notifications.push(notification);
-      
-      // Auto-remove after duration
+
+    // --- Weergave ---
+
+    toast(message, type = 'success') {
+      const id = Date.now() + Math.random();
+      this.toasts.push({ id, message, type });
       setTimeout(() => {
-        this.hideNotification(notification.id);
-      }, duration);
+        this.toasts = this.toasts.filter((t) => t.id !== id);
+      }, 4000);
     },
-    
-    hideNotification(id) {
-      const notification = this.notifications.find(n => n.id === id);
-      if (notification) {
-        notification.hiding = true;
-        
-        // Remove from DOM after fade animation
-        setTimeout(() => {
-          this.notifications = this.notifications.filter(n => n.id !== id);
-        }, 300);
-      }
+
+    price(value) {
+      if (value === null || value === undefined) return '';
+      return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value);
     },
-    
-    // Formatting Helpers
-    formatDate(isoString) {
-      if (!isoString) return '';
-      try {
-        const date = new Date(isoString);
-        return date.toLocaleDateString('nl-NL', {
-          day: 'numeric',
-          month: 'long',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        });
-      } catch {
-        return isoString;
-      }
+
+    date(value) {
+      if (!value) return '';
+      return new Date(value).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
     },
-    
-    formatDateOnly(isoString) {
-      if (!isoString) return '';
-      try {
-        const date = new Date(isoString);
-        return date.toLocaleDateString('nl-NL', {
-          day: '2-digit',
-          month: '2-digit'
-        });
-      } catch {
-        return isoString;
-      }
+
+    since(value) {
+      if (!value) return '';
+      const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
+      if (days <= 0) return 'vandaag';
+      if (days === 1) return 'gisteren';
+      if (days < 14) return `${days} dagen geleden`;
+      if (days < 60) return `${Math.floor(days / 7)} weken geleden`;
+      return `${Math.floor(days / 30)} maanden geleden`;
     },
-    
-    // Product Search Methods
-    async handleSearchInput() {
-      if (this.searchDebounceTimer) {
-        clearTimeout(this.searchDebounceTimer);
-      }
-      
-      this.searchDebounceTimer = setTimeout(async () => {
-        const query = this.searchQuery.trim();
-        if (query.length < 2) {
-          this.searchResults = [];
-          this.showSearchResults = false;
-          return;
-        }
-        
-        this.searchLoading = true;
-        
-        try {
-          const results = await appieApi.searchProducts(query);
-          this.searchResults = results;
-          this.showSearchResults = results.length > 0;
-          console.log('[searchProducts] Found', results.length, 'products');
-        } catch (error) {
-          console.error('[searchProducts] Error:', error);
-          
-          // Handle different types of errors
-          if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
-            this.showNotification('Product zoeken is momenteel niet beschikbaar. Gebruik de AH link handmatig.', 'error');
-          } else if (error.message.includes('Network')) {
-            this.showNotification('Netwerkfout. Controleer je verbinding.', 'error');
-          } else {
-            this.showNotification('Zoeken mislukt. Probeer het opnieuw.', 'error');
-          }
-          
-          this.searchResults = [];
-          this.showSearchResults = false;
-        } finally {
-          this.searchLoading = false;
-        }
-      }, 300);
-    },
-    
-    selectProduct(product) {
-      console.log('[selectProduct] Selected:', product.title);
-      
-      this.form.item = product.title;
-      this.form.ahUrl = product.url;
-      this.form.imageUrl = product.imageUrl || '';
-      
-      this.searchQuery = '';
-      this.searchResults = [];
-      this.showSearchResults = false;
-      
-      this.$nextTick(() => {
-        const quantityInput = document.getElementById('quantity');
-        if (quantityInput) quantityInput.focus();
-      });
-    },
-    
-    clearSearch() {
-      this.searchQuery = '';
-      this.searchResults = [];
-      this.showSearchResults = false;
-    },
-    
-    formatPrice(price) {
-      return appieApi.formatPrice(price);
-    }
   };
 }
