@@ -3,13 +3,29 @@
 
 // Eén plek om collega's toe te voegen of te verwijderen.
 const NAMES = [
-  'Anne', 'Chiara', 'Christiaan', 'Eddie', 'Elde', 'Erik', 'Jean-Pierre',
-  'Julian', 'Michel', 'Peggy', 'Percy', 'Remco', 'Richard', 'Roel',
-  'Sabien', 'Sander', 'Steve',
+  "Anne",
+  "Chiara",
+  "Christiaan",
+  "Eddie",
+  "Elde",
+  "Erik",
+  "Fransje",
+  "Jean-Pierre",
+  "Maikel",
+  "Michel",
+  "Peggy",
+  "Percy",
+  "Pim",
+  "Remco",
+  "Richard",
+  "Roel",
+  "Sabien",
+  "Sander",
+  "Steve",
 ];
 
-const STORAGE_NAME = 'boodschappen_naam';
-const STORAGE_ADMIN = 'boodschappen_admin';
+const STORAGE_NAME = "boodschappen_naam";
+const STORAGE_ADMIN = "boodschappen_admin";
 const ADMIN_DAYS = 30;
 const MAX_QUANTITY = 10;
 
@@ -18,7 +34,7 @@ function boodschappen() {
     names: NAMES,
     maxQuantity: MAX_QUANTITY,
 
-    tab: 'open',
+    tab: "open",
     loading: true,
     submitting: false,
     busyId: null,
@@ -27,19 +43,19 @@ function boodschappen() {
     items: { open: [], ordered: [] },
     frequent: [],
 
-    form: { product: null, quantity: 1, note: '', requester: '' },
+    form: { product: null, quantity: 1, note: "", requester: "" },
 
-    query: '',
+    query: "",
     results: [],
     searching: false,
     resultsOpen: false,
-    searchError: '',
+    searchError: "",
     searchTimer: null,
 
     adminCode: null,
     showAdminModal: false,
-    adminInput: '',
-    adminError: '',
+    adminInput: "",
+    adminError: "",
 
     toasts: [],
 
@@ -56,7 +72,7 @@ function boodschappen() {
     },
 
     get visibleItems() {
-      return this.tab === 'ordered' ? this.items.ordered : this.items.open;
+      return this.tab === "ordered" ? this.items.ordered : this.items.open;
     },
 
     get openCount() {
@@ -65,15 +81,15 @@ function boodschappen() {
 
     get openCountLabel() {
       const count = this.openCount;
-      return `${count} ${count === 1 ? 'stuk' : 'stuks'}`;
+      return `${count} ${count === 1 ? "stuk" : "stuks"}`;
     },
 
     // --- API ---
 
-    async api(path, { method = 'GET', body } = {}) {
+    async api(path, { method = "GET", body } = {}) {
       const headers = {};
-      if (body) headers['Content-Type'] = 'application/json';
-      if (this.adminCode) headers['X-Admin-Code'] = this.adminCode;
+      if (body) headers["Content-Type"] = "application/json";
+      if (this.adminCode) headers["X-Admin-Code"] = this.adminCode;
 
       const response = await fetch(`/api${path}`, {
         method,
@@ -90,7 +106,11 @@ function boodschappen() {
 
       if (!response.ok) {
         // Een afgekeurde admincode betekent dat de opgeslagen code niet meer klopt.
-        if (response.status === 403 && this.adminCode && data.error === 'Admincode vereist') {
+        if (
+          response.status === 403 &&
+          this.adminCode &&
+          data.error === "Admincode vereist"
+        ) {
           this.forgetAdmin();
         }
         throw new Error(data.error || `Er ging iets mis (${response.status})`);
@@ -104,16 +124,16 @@ function boodschappen() {
     async loadTab() {
       this.loading = true;
       try {
-        if (this.tab === 'frequent') {
-          const { products } = await this.api('/frequent');
+        if (this.tab === "frequent") {
+          const { products } = await this.api("/frequent");
           this.frequent = products;
         } else {
-          const status = this.tab === 'ordered' ? 'ordered' : 'open';
+          const status = this.tab === "ordered" ? "ordered" : "open";
           const { items } = await this.api(`/items?status=${status}`);
           this.items[status] = items;
         }
       } catch (error) {
-        this.toast(error.message, 'error');
+        this.toast(error.message, "error");
       } finally {
         this.loading = false;
       }
@@ -129,7 +149,7 @@ function boodschappen() {
 
     onSearchInput() {
       clearTimeout(this.searchTimer);
-      this.searchError = '';
+      this.searchError = "";
 
       const query = this.query.trim();
       if (query.length < 2) {
@@ -145,12 +165,14 @@ function boodschappen() {
 
     async runSearch(query) {
       try {
-        const { products } = await this.api(`/search?q=${encodeURIComponent(query)}`);
+        const { products } = await this.api(
+          `/search?q=${encodeURIComponent(query)}`,
+        );
         // Een trager antwoord op een oudere zoekterm mag een nieuwere niet overschrijven.
         if (this.query.trim() !== query) return;
         this.results = products;
         this.resultsOpen = true;
-        this.searchError = products.length ? '' : 'Geen producten gevonden';
+        this.searchError = products.length ? "" : "Geen producten gevonden";
       } catch (error) {
         this.results = [];
         this.resultsOpen = false;
@@ -163,17 +185,17 @@ function boodschappen() {
     selectProduct(product) {
       this.form.product = product;
       this.form.quantity = 1;
-      this.query = '';
+      this.query = "";
       this.results = [];
       this.resultsOpen = false;
-      this.searchError = '';
+      this.searchError = "";
       this.$nextTick(() => this.$refs.quantity?.focus());
     },
 
     clearProduct() {
       this.form.product = null;
       this.form.quantity = 1;
-      this.form.note = '';
+      this.form.note = "";
     },
 
     // Product uit "Vaker besteld" terugzetten in het formulier.
@@ -187,9 +209,11 @@ function boodschappen() {
         productUrl: product.productUrl,
         price: product.price,
       });
-      this.switchTab('open');
+      this.switchTab("open");
       this.$nextTick(() => {
-        document.getElementById('formulier')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document
+          .getElementById("formulier")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     },
 
@@ -199,19 +223,19 @@ function boodschappen() {
       if (this.submitting) return;
 
       if (!this.form.product) {
-        this.toast('Zoek en kies eerst een product', 'error');
+        this.toast("Zoek en kies eerst een product", "error");
         return;
       }
       if (!this.form.requester) {
-        this.toast('Kies je naam', 'error');
+        this.toast("Kies je naam", "error");
         return;
       }
 
       this.submitting = true;
       try {
         const product = this.form.product;
-        const { merged } = await this.api('/items', {
-          method: 'POST',
+        const { merged } = await this.api("/items", {
+          method: "POST",
           body: {
             requester: this.form.requester,
             productId: product.productId,
@@ -226,13 +250,13 @@ function boodschappen() {
           },
         });
 
-        this.toast(merged ? 'Aantal opgehoogd' : 'Toegevoegd aan de lijst');
+        this.toast(merged ? "Aantal opgehoogd" : "Toegevoegd aan de lijst");
         this.clearProduct();
 
-        this.tab = 'open';
+        this.tab = "open";
         await this.loadTab();
       } catch (error) {
-        this.toast(error.message, 'error');
+        this.toast(error.message, "error");
       } finally {
         this.submitting = false;
       }
@@ -242,7 +266,7 @@ function boodschappen() {
 
     isMine(item) {
       return (
-        item.status === 'open' &&
+        item.status === "open" &&
         Boolean(this.form.requester) &&
         item.requester.toLowerCase() === this.form.requester.toLowerCase()
       );
@@ -253,18 +277,21 @@ function boodschappen() {
     },
 
     async changeQuantity(item, delta) {
-      const quantity = Math.min(Math.max(item.quantity + delta, 1), MAX_QUANTITY);
+      const quantity = Math.min(
+        Math.max(item.quantity + delta, 1),
+        MAX_QUANTITY,
+      );
       if (quantity === item.quantity) return;
 
       this.busyId = item.id;
       try {
         const { item: updated } = await this.api(`/items/${item.id}`, {
-          method: 'PATCH',
+          method: "PATCH",
           body: { quantity, requester: this.form.requester },
         });
         Object.assign(item, updated);
       } catch (error) {
-        this.toast(error.message, 'error');
+        this.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -276,35 +303,40 @@ function boodschappen() {
       this.busyId = item.id;
       try {
         await this.api(`/items/${item.id}`, {
-          method: 'PATCH',
+          method: "PATCH",
           body: { status, requester: this.form.requester },
         });
         await this.loadTab();
         this.toast(this.statusMessage(status));
       } catch (error) {
-        this.toast(error.message, 'error');
+        this.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
     },
 
     statusMessage(status) {
-      if (status === 'ordered') return 'Op besteld gezet';
-      if (status === 'open') return 'Teruggezet op de lijst';
-      return 'Verwijderd';
+      if (status === "ordered") return "Op besteld gezet";
+      if (status === "open") return "Teruggezet op de lijst";
+      return "Verwijderd";
     },
 
     async orderAll() {
       if (this.items.open.length === 0) return;
-      if (!confirm(`Alle ${this.items.open.length} verzoeken op besteld zetten?`)) return;
+      if (
+        !confirm(`Alle ${this.items.open.length} verzoeken op besteld zetten?`)
+      )
+        return;
 
       this.bulkBusy = true;
       try {
-        const { ordered } = await this.api('/order-all', { method: 'POST' });
+        const { ordered } = await this.api("/order-all", { method: "POST" });
         await this.loadTab();
-        this.toast(`${ordered} ${ordered === 1 ? 'item' : 'items'} op besteld gezet`);
+        this.toast(
+          `${ordered} ${ordered === 1 ? "item" : "items"} op besteld gezet`,
+        );
       } catch (error) {
-        this.toast(error.message, 'error');
+        this.toast(error.message, "error");
       } finally {
         this.bulkBusy = false;
       }
@@ -315,7 +347,7 @@ function boodschappen() {
     async copyList() {
       const items = this.items.open;
       if (items.length === 0) {
-        this.toast('De lijst is leeg', 'error');
+        this.toast("De lijst is leeg", "error");
         return;
       }
 
@@ -323,36 +355,48 @@ function boodschappen() {
       const grouped = new Map();
       for (const item of items) {
         const key = item.productId || item.title.toLowerCase();
-        const entry = grouped.get(key) || { title: item.title, quantity: 0, names: [], notes: [] };
+        const entry = grouped.get(key) || {
+          title: item.title,
+          quantity: 0,
+          names: [],
+          notes: [],
+        };
         entry.quantity += item.quantity;
-        if (!entry.names.includes(item.requester)) entry.names.push(item.requester);
-        if (item.note && !entry.notes.includes(item.note)) entry.notes.push(item.note);
+        if (!entry.names.includes(item.requester))
+          entry.names.push(item.requester);
+        if (item.note && !entry.notes.includes(item.note))
+          entry.notes.push(item.note);
         grouped.set(key, entry);
       }
 
-      const heading = `Boodschappenlijst ${new Date().toLocaleDateString('nl-NL', {
-        day: 'numeric', month: 'long', year: 'numeric',
-      })}`;
+      const heading = `Boodschappenlijst ${new Date().toLocaleDateString(
+        "nl-NL",
+        {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        },
+      )}`;
 
       const lines = [...grouped.values()].map((entry) => {
-        let line = `${entry.quantity}x ${entry.title} (${entry.names.join(', ')})`;
-        if (entry.notes.length) line += ` - ${entry.notes.join('; ')}`;
+        let line = `${entry.quantity}x ${entry.title} (${entry.names.join(", ")})`;
+        if (entry.notes.length) line += ` - ${entry.notes.join("; ")}`;
         return line;
       });
 
       try {
-        await navigator.clipboard.writeText([heading, '', ...lines].join('\n'));
-        this.toast('Lijst gekopieerd');
+        await navigator.clipboard.writeText([heading, "", ...lines].join("\n"));
+        this.toast("Lijst gekopieerd");
       } catch {
-        this.toast('Kopieren lukte niet', 'error');
+        this.toast("Kopieren lukte niet", "error");
       }
     },
 
     // --- Beheer ---
 
     openAdminModal() {
-      this.adminInput = '';
-      this.adminError = '';
+      this.adminInput = "";
+      this.adminError = "";
       this.showAdminModal = true;
       this.$nextTick(() => this.$refs.adminInput?.focus());
     },
@@ -364,20 +408,20 @@ function boodschappen() {
       const previous = this.adminCode;
       this.adminCode = code;
       try {
-        await this.api('/admin', { method: 'POST' });
+        await this.api("/admin", { method: "POST" });
         this.storeAdminCode(code);
         this.showAdminModal = false;
-        this.toast('Ingelogd als beheerder');
+        this.toast("Ingelogd als beheerder");
         await this.loadTab();
       } catch {
         this.adminCode = previous;
-        this.adminError = 'Die code klopt niet';
+        this.adminError = "Die code klopt niet";
       }
     },
 
     logoutAdmin() {
       this.forgetAdmin();
-      this.toast('Uitgelogd');
+      this.toast("Uitgelogd");
       this.loadTab();
     },
 
@@ -393,7 +437,10 @@ function boodschappen() {
     storeAdminCode(code) {
       try {
         const expiresAt = Date.now() + ADMIN_DAYS * 24 * 60 * 60 * 1000;
-        localStorage.setItem(STORAGE_ADMIN, JSON.stringify({ code, expiresAt }));
+        localStorage.setItem(
+          STORAGE_ADMIN,
+          JSON.stringify({ code, expiresAt }),
+        );
       } catch {
         // Niet kunnen onthouden is vervelend, niet fataal.
       }
@@ -427,15 +474,15 @@ function boodschappen() {
     readName() {
       try {
         const stored = localStorage.getItem(STORAGE_NAME);
-        return NAMES.includes(stored) ? stored : '';
+        return NAMES.includes(stored) ? stored : "";
       } catch {
-        return '';
+        return "";
       }
     },
 
     // --- Weergave ---
 
-    toast(message, type = 'success') {
+    toast(message, type = "success") {
       const id = Date.now() + Math.random();
       this.toasts.push({ id, message, type });
       setTimeout(() => {
@@ -444,20 +491,28 @@ function boodschappen() {
     },
 
     price(value) {
-      if (value === null || value === undefined) return '';
-      return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value);
+      if (value === null || value === undefined) return "";
+      return new Intl.NumberFormat("nl-NL", {
+        style: "currency",
+        currency: "EUR",
+      }).format(value);
     },
 
     date(value) {
-      if (!value) return '';
-      return new Date(value).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+      if (!value) return "";
+      return new Date(value).toLocaleDateString("nl-NL", {
+        day: "numeric",
+        month: "short",
+      });
     },
 
     since(value) {
-      if (!value) return '';
-      const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
-      if (days <= 0) return 'vandaag';
-      if (days === 1) return 'gisteren';
+      if (!value) return "";
+      const days = Math.floor(
+        (Date.now() - new Date(value).getTime()) / 86400000,
+      );
+      if (days <= 0) return "vandaag";
+      if (days === 1) return "gisteren";
       if (days < 14) return `${days} dagen geleden`;
       if (days < 60) return `${Math.floor(days / 7)} weken geleden`;
       return `${Math.floor(days / 30)} maanden geleden`;
