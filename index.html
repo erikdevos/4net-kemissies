@@ -1,340 +1,628 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="nl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Boodschappen &middot; 4net</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Boodschappen &middot; 4net</title>
 
-  <!-- Interne tool: niet indexeren -->
-  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <!-- Interne tool: niet indexeren -->
+    <meta
+      name="robots"
+      content="noindex, nofollow, noarchive, nosnippet, noimageindex"
+    />
 
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="styles.css" />
 
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-</head>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+  </head>
 
-<body x-data="boodschappen()" x-cloak>
-
-  <div class="toasts" aria-live="polite" aria-atomic="false">
-    <template x-for="toast in toasts" :key="toast.id">
-      <div class="toast" :class="toast.type" x-text="toast.message"
-           x-transition:enter="toast-enter" x-transition:leave="toast-leave"></div>
-    </template>
-  </div>
-
-  <header class="site-header">
-    <div class="site-header__inner">
-      <div class="brand">
-        <img src="resource/logo-4net.svg" alt="4net" class="brand__logo" width="140" height="52">
-        <span class="brand__title">Boodschappen</span>
-      </div>
-      <button type="button" class="btn btn--ghost btn--sm"
-              @click="isAdmin ? logoutAdmin() : openAdminModal()"
-              x-text="isAdmin ? 'Uitloggen' : 'Beheer'"></button>
+  <body x-data="boodschappen()" x-cloak>
+    <div class="toasts" aria-live="polite" aria-atomic="false">
+      <template x-for="toast in toasts" :key="toast.id">
+        <div
+          class="toast"
+          :class="toast.type"
+          x-text="toast.message"
+          x-transition:enter="toast-enter"
+          x-transition:leave="toast-leave"
+        ></div>
+      </template>
     </div>
-  </header>
 
-  <main class="layout">
-
-    <!-- ============ Formulier ============ -->
-    <section class="panel panel--form" id="formulier" aria-labelledby="formulier-titel">
-      <h2 class="panel__title" id="formulier-titel">Wat wil je hebben?</h2>
-
-      <form @submit.prevent="submit" novalidate>
-
-        <div class="field search" @click.outside="resultsOpen = false">
-          <label for="zoek">Zoek bij Albert Heijn</label>
-          <div class="search__input">
-            <input type="text" id="zoek" x-model="query" @input="onSearchInput"
-                   @focus="results.length && (resultsOpen = true)"
-                   placeholder="Bijvoorbeeld: melk, vlammetjes, koffie"
-                   autocomplete="off" role="combobox" aria-expanded="false"
-                   :aria-expanded="resultsOpen" aria-controls="zoekresultaten">
-            <span class="spinner spinner--inline" x-show="searching" aria-hidden="true"></span>
-          </div>
-
-          <p class="field__hint field__hint--error" x-show="searchError" x-text="searchError"></p>
-
-          <ul class="results" id="zoekresultaten" x-show="resultsOpen" role="listbox">
-            <template x-for="product in results" :key="product.productId">
-              <li>
-                <button type="button" class="result" @click="selectProduct(product)" role="option">
-                  <img class="result__image" :src="product.imageUrl" :alt="''" loading="lazy"
-                       x-show="product.imageUrl" @error="$el.style.visibility = 'hidden'">
-                  <span class="result__body">
-                    <span class="result__title" x-text="product.title"></span>
-                    <span class="result__meta">
-                      <span x-show="product.unitSize" x-text="product.unitSize"></span>
-                      <span class="tag tag--bonus" x-show="product.isBonus">Bonus</span>
-                      <span class="result__price" x-text="price(product.price)"></span>
-                    </span>
-                  </span>
-                </button>
-              </li>
-            </template>
-          </ul>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <img
+            src="resource/logo-4net.svg"
+            alt="4net"
+            class="brand__logo"
+            width="140"
+            height="52"
+          />
+          <span class="brand__title">Boodschappen</span>
         </div>
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm"
+          @click="isAdmin ? logoutAdmin() : openAdminModal()"
+          x-text="isAdmin ? 'Uitloggen' : 'Beheer'"
+        ></button>
+      </div>
+    </header>
 
-        <!-- Gekozen product -->
-        <template x-if="form.product">
-          <div class="chosen">
-            <img class="chosen__image" :src="form.product.imageUrl" :alt="''"
-                 x-show="form.product.imageUrl" @error="$el.style.visibility = 'hidden'">
-            <div class="chosen__body">
-              <p class="chosen__title" x-text="form.product.title"></p>
-              <p class="chosen__meta">
-                <span x-show="form.product.unitSize" x-text="form.product.unitSize"></span>
-                <span x-show="form.product.price !== null" x-text="price(form.product.price)"></span>
-              </p>
-              <a class="chosen__link" :href="form.product.productUrl" target="_blank" rel="noopener"
-                 x-show="form.product.productUrl">Bekijk op ah.nl</a>
+    <main class="layout">
+      <!-- ============ Formulier ============ -->
+      <section
+        class="panel panel--form"
+        id="formulier"
+        aria-labelledby="formulier-titel"
+      >
+        <h2 class="panel__title" id="formulier-titel">Wat wil je hebben?</h2>
+
+        <form @submit.prevent="submit" novalidate>
+          <div class="field search" @click.outside="resultsOpen = false">
+            <label for="zoek">Zoek bij Albert Heijn</label>
+            <div class="search__input">
+              <input
+                type="text"
+                id="zoek"
+                x-model="query"
+                @input="onSearchInput"
+                @focus="results.length && (resultsOpen = true)"
+                placeholder="Bijvoorbeeld: melk, vlammetjes, koffie"
+                autocomplete="off"
+                role="combobox"
+                aria-expanded="false"
+                :aria-expanded="resultsOpen"
+                aria-controls="zoekresultaten"
+              />
+              <span
+                class="spinner spinner--inline"
+                x-show="searching"
+                aria-hidden="true"
+              ></span>
             </div>
-            <button type="button" class="chosen__clear" @click="clearProduct"
-                    aria-label="Ander product kiezen">&times;</button>
-          </div>
-        </template>
 
-        <div x-show="form.product">
-          <div class="field">
-            <label for="aantal">Aantal</label>
-            <input type="number" id="aantal" x-ref="quantity" x-model.number="form.quantity"
-                   min="1" :max="maxQuantity" step="1" inputmode="numeric">
-          </div>
+            <p
+              class="field__hint field__hint--error"
+              x-show="searchError"
+              x-text="searchError"
+            ></p>
 
-          <div class="field">
-            <label for="opmerking">Opmerking <span class="field__optional">optioneel</span></label>
-            <input type="text" id="opmerking" x-model="form.note" maxlength="200"
-                   placeholder="Bijvoorbeeld: anders de light-variant">
-          </div>
-
-          <div class="field">
-            <label for="naam">Jouw naam</label>
-            <select id="naam" x-model="form.requester" @change="rememberName" required>
-              <option value="">Kies je naam</option>
-              <template x-for="name in names" :key="name">
-                <option :value="name" x-text="name"></option>
+            <ul
+              class="results"
+              id="zoekresultaten"
+              x-show="resultsOpen"
+              role="listbox"
+            >
+              <template x-for="product in results" :key="product.productId">
+                <li>
+                  <button
+                    type="button"
+                    class="result"
+                    @click="selectProduct(product)"
+                    role="option"
+                  >
+                    <img
+                      class="result__image"
+                      :src="product.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      x-show="product.imageUrl"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
+                    <span class="result__body">
+                      <span class="result__title" x-text="product.title"></span>
+                      <span class="result__meta">
+                        <span
+                          x-show="product.unitSize"
+                          x-text="product.unitSize"
+                        ></span>
+                        <span class="tag tag--bonus" x-show="product.isBonus"
+                          >Bonus</span
+                        >
+                        <span
+                          class="result__price"
+                          x-text="price(product.price)"
+                        ></span>
+                      </span>
+                    </span>
+                  </button>
+                </li>
               </template>
-            </select>
+            </ul>
           </div>
 
-          <div class="form-actions">
-            <button type="submit" class="btn btn--primary" :disabled="submitting">
-              <span x-text="submitting ? 'Bezig...' : 'Op de lijst zetten'"></span>
-            </button>
-            <button type="button" class="btn btn--ghost" @click="clearProduct" :disabled="submitting">
-              Annuleren
-            </button>
-          </div>
-        </div>
-
-        <p class="empty empty--inline" x-show="!form.product && !resultsOpen">
-          Zoek hierboven een product. Wat je vaker bestelt, staat onder <strong>Vaker besteld</strong>.
-        </p>
-      </form>
-    </section>
-
-    <!-- ============ Lijst ============ -->
-    <section class="panel" aria-labelledby="lijst-titel">
-      <div class="panel__head">
-        <h2 class="panel__title" id="lijst-titel">De lijst</h2>
-        <button type="button" class="icon-btn" @click="loadTab" :disabled="loading"
-                title="Vernieuwen" aria-label="Lijst vernieuwen">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"
-               :class="loading && 'is-spinning'">
-            <path d="M19.146 4.854l-1.489 1.489A8 8 0 1 0 12 20a8.094 8.094 0 0 0 7.371-4.886 1 1 0 1 0-1.842-.779A6.071 6.071 0 0 1 12 18a6 6 0 1 1 4.243-10.243l-1.39 1.39a.5.5 0 0 0 .354.854H19.5A.5.5 0 0 0 20 9.5V5.207a.5.5 0 0 0-.854-.353z"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="tabs" role="tablist">
-        <button role="tab" class="tab" :class="tab === 'open' && 'is-active'"
-                :aria-selected="tab === 'open'" @click="switchTab('open')">
-          Te bestellen
-          <span class="tab__count" x-show="items.open.length" x-text="items.open.length"></span>
-        </button>
-        <button role="tab" class="tab" :class="tab === 'frequent' && 'is-active'"
-                :aria-selected="tab === 'frequent'" @click="switchTab('frequent')">
-          Vaker besteld
-        </button>
-        <button role="tab" class="tab" :class="tab === 'ordered' && 'is-active'"
-                :aria-selected="tab === 'ordered'" @click="switchTab('ordered')">
-          Besteld
-        </button>
-      </div>
-
-      <div class="loading" x-show="loading">
-        <span class="spinner" aria-hidden="true"></span>
-        <span>Ophalen...</span>
-      </div>
-
-      <div x-show="!loading">
-
-        <!-- Te bestellen -->
-        <div x-show="tab === 'open'" role="tabpanel">
-          <p class="empty" x-show="!items.open.length">
-            Nog geen verzoeken. Zet links het eerste product op de lijst.
-          </p>
-
-          <ul class="items">
-            <template x-for="item in items.open" :key="item.id">
-              <li class="item" :class="busyId === item.id && 'is-busy'">
-                <a class="item__image-link" :href="item.productUrl || null" target="_blank" rel="noopener">
-                  <img class="item__image" :src="item.imageUrl" :alt="''" loading="lazy"
-                       @error="$el.style.visibility = 'hidden'">
-                </a>
-                <div class="item__body">
-                  <a class="item__title" :href="item.productUrl || null" target="_blank" rel="noopener">
-                    <span x-text="item.title"></span>
-                    <svg x-show="item.productUrl" class="item__title-icon" viewBox="0 0 24 24" width="14" height="14"
-                         fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                      <path d="M7 17 17 7M9 7h8v8"/>
-                    </svg>
-                  </a>
-                  <p class="item__meta">
-                    <span x-text="item.requester"></span>
-                    <span x-show="item.unitSize" x-text="item.unitSize"></span>
-                    <span x-show="item.price !== null" x-text="price(item.price)"></span>
-                  </p>
-                  <p class="item__note" x-show="item.note" x-text="item.note"></p>
-                </div>
-
-                <div class="item__quantity">
-                  <template x-if="canEdit(item)">
-                    <div class="stepper">
-                      <button type="button" @click="changeQuantity(item, -1)"
-                              :disabled="item.quantity <= 1 || busyId === item.id"
-                              aria-label="Eentje minder">&minus;</button>
-                      <span x-text="item.quantity"></span>
-                      <button type="button" @click="changeQuantity(item, 1)"
-                              :disabled="item.quantity >= maxQuantity || busyId === item.id"
-                              aria-label="Eentje meer">+</button>
-                    </div>
-                  </template>
-                  <template x-if="!canEdit(item)">
-                    <span class="tag" x-text="item.quantity + 'x'"></span>
-                  </template>
-                </div>
-
-                <div class="item__actions">
-                  <button type="button" class="btn btn--sm btn--primary" x-show="isAdmin"
-                          @click="setStatus(item, 'ordered')" :disabled="busyId === item.id">
-                    Besteld
-                  </button>
-                  <button type="button" class="btn btn--sm btn--danger" x-show="isAdmin"
-                          @click="setStatus(item, 'deleted', 'Dit item verwijderen?')"
-                          :disabled="busyId === item.id">
-                    Verwijderen
-                  </button>
-                  <button type="button" class="btn btn--sm btn--ghost" x-show="!isAdmin && isMine(item)"
-                          @click="setStatus(item, 'deleted', 'Je eigen verzoek intrekken?')"
-                          :disabled="busyId === item.id">
-                    Intrekken
-                  </button>
-                </div>
-              </li>
-            </template>
-          </ul>
-
-          <div class="bar" x-show="items.open.length">
-            <button type="button" class="btn btn--ghost btn--sm" @click="copyList">
-              Lijst kopieren
-            </button>
-            <button type="button" class="btn btn--primary btn--sm" x-show="isAdmin"
-                    @click="orderAll" :disabled="bulkBusy">
-              <span x-text="bulkBusy ? 'Bezig...' : 'Alles op besteld'"></span>
-            </button>
-            <span class="bar__total" x-text="openCountLabel"></span>
-          </div>
-        </div>
-
-        <!-- Vaker besteld -->
-        <div x-show="tab === 'frequent'" role="tabpanel">
-          <p class="empty" x-show="!frequent.length">
-            Zodra er een ronde besteld is, verschijnen hier de producten die jullie
-            het vaakst halen.
-          </p>
-
-          <ul class="grid">
-            <template x-for="product in frequent" :key="product.productId">
-              <li class="card">
-                <img class="card__image" :src="product.imageUrl" :alt="''" loading="lazy"
-                     @error="$el.style.visibility = 'hidden'">
-                <p class="card__title" x-text="product.title"></p>
-                <p class="card__meta">
-                  <span class="tag" x-text="product.times + 'x besteld'"></span>
-                  <span x-text="since(product.lastOrdered)"></span>
+          <!-- Gekozen product -->
+          <template x-if="form.product">
+            <div class="chosen">
+              <img
+                class="chosen__image"
+                :src="form.product.imageUrl"
+                :alt="''"
+                x-show="form.product.imageUrl"
+                @error="$el.style.visibility = 'hidden'"
+              />
+              <div class="chosen__body">
+                <p class="chosen__title" x-text="form.product.title"></p>
+                <p class="chosen__meta">
+                  <span
+                    x-show="form.product.unitSize"
+                    x-text="form.product.unitSize"
+                  ></span>
+                  <span
+                    x-show="form.product.price !== null"
+                    x-text="price(form.product.price)"
+                  ></span>
                 </p>
-                <button type="button" class="btn btn--sm btn--primary card__btn" @click="reuse(product)">
-                  Op de lijst
-                </button>
-              </li>
-            </template>
-          </ul>
+                <a
+                  class="chosen__link"
+                  :href="form.product.productUrl"
+                  target="_blank"
+                  rel="noopener"
+                  x-show="form.product.productUrl"
+                  >Bekijk op ah.nl</a
+                >
+              </div>
+              <button
+                type="button"
+                class="chosen__clear"
+                @click="clearProduct"
+                aria-label="Ander product kiezen"
+              >
+                &times;
+              </button>
+            </div>
+          </template>
+
+          <div x-show="form.product">
+            <div class="field">
+              <label for="aantal">Aantal</label>
+              <input
+                type="number"
+                id="aantal"
+                x-ref="quantity"
+                x-model.number="form.quantity"
+                min="1"
+                :max="maxQuantity"
+                step="1"
+                inputmode="numeric"
+              />
+            </div>
+
+            <div class="field">
+              <label for="opmerking"
+                >Opmerking <span class="field__optional">optioneel</span></label
+              >
+              <input
+                type="text"
+                id="opmerking"
+                x-model="form.note"
+                maxlength="200"
+                placeholder="Bijvoorbeeld: anders de light-variant"
+              />
+            </div>
+
+            <div class="field">
+              <label for="naam">Jouw naam</label>
+              <select
+                id="naam"
+                x-model="form.requester"
+                @change="rememberName"
+                required
+              >
+                <option value="">Kies je naam</option>
+                <template x-for="name in names" :key="name">
+                  <option :value="name" x-text="name"></option>
+                </template>
+              </select>
+            </div>
+
+            <div class="form-actions">
+              <button
+                type="submit"
+                class="btn btn--primary"
+                :disabled="submitting"
+              >
+                <span
+                  x-text="submitting ? 'Bezig...' : 'Op de lijst zetten'"
+                ></span>
+              </button>
+              <button
+                type="button"
+                class="btn btn--ghost"
+                @click="clearProduct"
+                :disabled="submitting"
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
+
+          <p class="empty empty--inline" x-show="!form.product && !resultsOpen">
+            Zoek hierboven een product. Wat je vaker bestelt, staat onder
+            <strong>Vaker besteld</strong>.
+          </p>
+        </form>
+      </section>
+
+      <!-- ============ Lijst ============ -->
+      <section class="panel" aria-labelledby="lijst-titel">
+        <div class="panel__head">
+          <h2 class="panel__title" id="lijst-titel">De lijst</h2>
+          <button
+            type="button"
+            class="icon-btn"
+            @click="loadTab"
+            :disabled="loading"
+            title="Vernieuwen"
+            aria-label="Lijst vernieuwen"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"
+              :class="loading && 'is-spinning'"
+            >
+              <path
+                d="M19.146 4.854l-1.489 1.489A8 8 0 1 0 12 20a8.094 8.094 0 0 0 7.371-4.886 1 1 0 1 0-1.842-.779A6.071 6.071 0 0 1 12 18a6 6 0 1 1 4.243-10.243l-1.39 1.39a.5.5 0 0 0 .354.854H19.5A.5.5 0 0 0 20 9.5V5.207a.5.5 0 0 0-.854-.353z"
+              />
+            </svg>
+          </button>
         </div>
 
-        <!-- Besteld -->
-        <div x-show="tab === 'ordered'" role="tabpanel">
-          <p class="empty" x-show="!items.ordered.length">Er is nog niets besteld.</p>
+        <div class="tabs" role="tablist">
+          <button
+            role="tab"
+            class="tab"
+            :class="tab === 'open' && 'is-active'"
+            :aria-selected="tab === 'open'"
+            @click="switchTab('open')"
+          >
+            Te bestellen
+            <span
+              class="tab__count"
+              x-show="items.open.length"
+              x-text="items.open.length"
+            ></span>
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            :class="tab === 'frequent' && 'is-active'"
+            :aria-selected="tab === 'frequent'"
+            @click="switchTab('frequent')"
+          >
+            Vaker besteld
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            :class="tab === 'ordered' && 'is-active'"
+            :aria-selected="tab === 'ordered'"
+            @click="switchTab('ordered')"
+          >
+            Besteld
+          </button>
+        </div>
 
-          <ul class="items">
-            <template x-for="item in items.ordered" :key="item.id">
-              <li class="item item--done" :class="busyId === item.id && 'is-busy'">
-                <a class="item__image-link" :href="item.productUrl || null" target="_blank" rel="noopener">
-                  <img class="item__image" :src="item.imageUrl" :alt="''" loading="lazy"
-                       @error="$el.style.visibility = 'hidden'">
-                </a>
-                <div class="item__body">
-                  <a class="item__title" :href="item.productUrl || null" target="_blank" rel="noopener">
-                    <span x-text="item.title"></span>
-                    <svg x-show="item.productUrl" class="item__title-icon" viewBox="0 0 24 24" width="14" height="14"
-                         fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                      <path d="M7 17 17 7M9 7h8v8"/>
-                    </svg>
+        <div class="loading" x-show="loading">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Ophalen...</span>
+        </div>
+
+        <div x-show="!loading">
+          <!-- Te bestellen -->
+          <div x-show="tab === 'open'" role="tabpanel">
+            <p class="empty" x-show="!items.open.length">
+              Nog geen verzoeken. Zet links het eerste product op de lijst.
+            </p>
+
+            <ul class="items">
+              <template x-for="item in items.open" :key="item.id">
+                <li class="item" :class="busyId === item.id && 'is-busy'">
+                  <a
+                    class="item__image-link"
+                    :href="item.productUrl || null"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <img
+                      class="item__image"
+                      :src="item.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
                   </a>
-                  <p class="item__meta">
-                    <span x-text="item.requester"></span>
-                    <span x-text="'besteld ' + date(item.orderedAt)"></span>
+                  <div class="item__body">
+                    <a
+                      class="item__title"
+                      :href="item.productUrl || null"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <span x-text="item.title"></span>
+                      <svg
+                        x-show="item.productUrl"
+                        class="item__title-icon"
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path d="M7 17 17 7M9 7h8v8" />
+                      </svg>
+                    </a>
+                    <p class="item__meta">
+                      <span x-text="item.requester"></span>
+                      <span
+                        x-show="item.unitSize"
+                        x-text="item.unitSize"
+                      ></span>
+                      <span
+                        x-show="item.price !== null"
+                        x-text="price(item.price)"
+                      ></span>
+                    </p>
+                    <p
+                      class="item__note"
+                      x-show="item.note"
+                      x-text="item.note"
+                    ></p>
+                  </div>
+
+                  <div class="item__quantity">
+                    <template x-if="canEdit(item)">
+                      <div class="stepper">
+                        <button
+                          type="button"
+                          @click="changeQuantity(item, -1)"
+                          :disabled="item.quantity <= 1 || busyId === item.id"
+                          aria-label="Eentje minder"
+                        >
+                          &minus;
+                        </button>
+                        <span x-text="item.quantity"></span>
+                        <button
+                          type="button"
+                          @click="changeQuantity(item, 1)"
+                          :disabled="item.quantity >= maxQuantity || busyId === item.id"
+                          aria-label="Eentje meer"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </template>
+                    <template x-if="!canEdit(item)">
+                      <span class="tag" x-text="item.quantity + 'x'"></span>
+                    </template>
+                  </div>
+
+                  <div class="item__actions">
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--primary"
+                      x-show="isAdmin"
+                      @click="setStatus(item, 'ordered')"
+                      :disabled="busyId === item.id"
+                    >
+                      Besteld
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--danger"
+                      x-show="isAdmin"
+                      @click="setStatus(item, 'deleted', 'Dit item verwijderen?')"
+                      :disabled="busyId === item.id"
+                    >
+                      Verwijderen
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--ghost"
+                      x-show="!isAdmin && isMine(item)"
+                      @click="setStatus(item, 'deleted', 'Je eigen verzoek intrekken?')"
+                      :disabled="busyId === item.id"
+                    >
+                      Intrekken
+                    </button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+
+            <div class="bar" x-show="items.open.length">
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                @click="copyList"
+              >
+                Lijst kopieren
+              </button>
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                x-show="isAdmin"
+                @click="orderAll"
+                :disabled="bulkBusy"
+              >
+                <span
+                  x-text="bulkBusy ? 'Bezig...' : 'Alles op besteld'"
+                ></span>
+              </button>
+              <span class="bar__total" x-text="openCountLabel"></span>
+            </div>
+          </div>
+
+          <!-- Vaker besteld -->
+          <div x-show="tab === 'frequent'" role="tabpanel">
+            <p class="empty" x-show="!frequent.length">
+              Zodra er een ronde besteld is, verschijnen hier de producten die
+              jullie het vaakst halen.
+            </p>
+
+            <ul class="grid">
+              <template x-for="product in frequent" :key="product.productId">
+                <li class="card">
+                  <img
+                    class="card__image"
+                    :src="product.imageUrl"
+                    :alt="''"
+                    loading="lazy"
+                    @error="$el.style.visibility = 'hidden'"
+                  />
+                  <p class="card__title" x-text="product.title"></p>
+                  <p class="card__meta">
+                    <span class="tag" x-text="besteld"></span>
+                    <span x-text="since(product.lastOrdered)"></span>
                   </p>
-                </div>
-                <div class="item__quantity">
-                  <span class="tag" x-text="item.quantity + 'x'"></span>
-                </div>
-                <div class="item__actions">
-                  <button type="button" class="btn btn--sm btn--ghost" x-show="isAdmin"
-                          @click="setStatus(item, 'open')" :disabled="busyId === item.id">
-                    Terug op lijst
+                  <button
+                    type="button"
+                    class="btn btn--sm btn--primary card__btn"
+                    @click="reuse(product)"
+                  >
+                    Toevoegen
                   </button>
-                </div>
-              </li>
-            </template>
-          </ul>
+                </li>
+              </template>
+            </ul>
+          </div>
+
+          <!-- Besteld -->
+          <div x-show="tab === 'ordered'" role="tabpanel">
+            <p class="empty" x-show="!items.ordered.length">
+              Er is nog niets besteld.
+            </p>
+
+            <ul class="items">
+              <template x-for="item in items.ordered" :key="item.id">
+                <li
+                  class="item item--done"
+                  :class="busyId === item.id && 'is-busy'"
+                >
+                  <a
+                    class="item__image-link"
+                    :href="item.productUrl || null"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <img
+                      class="item__image"
+                      :src="item.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
+                  </a>
+                  <div class="item__body">
+                    <a
+                      class="item__title"
+                      :href="item.productUrl || null"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <span x-text="item.title"></span>
+                      <svg
+                        x-show="item.productUrl"
+                        class="item__title-icon"
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path d="M7 17 17 7M9 7h8v8" />
+                      </svg>
+                    </a>
+                    <p class="item__meta">
+                      <span x-text="item.requester"></span>
+                      <span x-text="'besteld ' + date(item.orderedAt)"></span>
+                    </p>
+                  </div>
+                  <div class="item__quantity">
+                    <span class="tag" x-text="item.quantity + 'x'"></span>
+                  </div>
+                  <div class="item__actions">
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--ghost"
+                      x-show="isAdmin"
+                      @click="setStatus(item, 'open')"
+                      :disabled="busyId === item.id"
+                    >
+                      Terug op bestellijst
+                    </button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </div>
         </div>
+      </section>
+    </main>
 
-      </div>
-    </section>
-  </main>
-
-  <!-- ============ Beheer-modal ============ -->
-  <div class="modal" x-show="showAdminModal" @keydown.escape.window="showAdminModal = false"
-       role="dialog" aria-modal="true" aria-labelledby="modal-titel">
-    <div class="modal__backdrop" @click="showAdminModal = false"></div>
-    <div class="modal__box">
-      <h2 class="modal__title" id="modal-titel">Beheer</h2>
-      <p class="modal__text">Vul de beheerderscode in om te kunnen bestellen en verwijderen.</p>
-      <input type="password" x-ref="adminInput" x-model="adminInput" @keydown.enter="confirmAdmin"
-             placeholder="Beheerderscode" autocomplete="off" aria-label="Beheerderscode">
-      <p class="field__hint field__hint--error" x-show="adminError" x-text="adminError"></p>
-      <div class="modal__actions">
-        <button type="button" class="btn btn--ghost" @click="showAdminModal = false">Annuleren</button>
-        <button type="button" class="btn btn--primary" @click="confirmAdmin">Inloggen</button>
+    <!-- ============ Beheer-modal ============ -->
+    <div
+      class="modal"
+      x-show="showAdminModal"
+      @keydown.escape.window="showAdminModal = false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-titel"
+    >
+      <div class="modal__backdrop" @click="showAdminModal = false"></div>
+      <div class="modal__box">
+        <h2 class="modal__title" id="modal-titel">Beheer</h2>
+        <p class="modal__text">
+          Vul de beheerderscode in om te kunnen bestellen en verwijderen.
+        </p>
+        <input
+          type="password"
+          x-ref="adminInput"
+          x-model="adminInput"
+          @keydown.enter="confirmAdmin"
+          placeholder="Beheerderscode"
+          autocomplete="off"
+          aria-label="Beheerderscode"
+        />
+        <p
+          class="field__hint field__hint--error"
+          x-show="adminError"
+          x-text="adminError"
+        ></p>
+        <div class="modal__actions">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            @click="showAdminModal = false"
+          >
+            Annuleren
+          </button>
+          <button type="button" class="btn btn--primary" @click="confirmAdmin">
+            Inloggen
+          </button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <script src="app.js"></script>
-</body>
+    <script src="app.js"></script>
+  </body>
 </html>
