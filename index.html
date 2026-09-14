@@ -657,6 +657,18 @@
       </section>
     </main>
 
+    <!-- Verstopt met opzet: geen zichtbare actieknop, alleen voor de beheerder,
+         helemaal onderaan de pagina. -->
+    <footer x-show="isAdmin" style="text-align: center; padding: 0 2rem 3rem">
+      <button
+        type="button"
+        class="wipe-trigger"
+        @click="openWipeModal"
+      >
+        Volledig opschonen
+      </button>
+    </footer>
+
     <!-- ============ Beheer-modal ============ -->
     <div
       class="modal"
@@ -696,6 +708,52 @@
           </button>
           <button type="button" class="btn btn--primary" @click="confirmAdmin">
             Inloggen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Opschoon-modal ============ -->
+    <div
+      class="modal"
+      x-show="showWipeModal"
+      @keydown.escape.window="showWipeModal = false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wipe-titel"
+    >
+      <div class="modal__backdrop" @click="showWipeModal = false"></div>
+      <div class="modal__box">
+        <h2 class="modal__title" id="wipe-titel">Alles definitief wissen?</h2>
+        <p class="modal__text">
+          Dit verwijdert <strong>alle</strong> verzoeken - open, besteld,
+          ingetrokken en afgewezen - onomkeerbaar. Er is geen weg terug en geen
+          back-up. Typ hieronder exact
+          <strong x-text="wipeConfirmPhrase"></strong> om te bevestigen.
+        </p>
+        <input
+          type="text"
+          x-model="wipeConfirmInput"
+          @keydown.enter="confirmWipe"
+          placeholder="Typ hier de bevestigingszin"
+          autocomplete="off"
+          aria-label="Bevestigingszin"
+        />
+        <div class="modal__actions">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            @click="showWipeModal = false"
+          >
+            Annuleren
+          </button>
+          <button
+            type="button"
+            class="btn btn--danger"
+            @click="confirmWipe"
+            :disabled="!wipeConfirmMatches || wipeBusy"
+          >
+            <span x-text="wipeBusy ? 'Bezig...' : 'Definitief alles wissen'"></span>
           </button>
         </div>
       </div>

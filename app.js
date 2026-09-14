@@ -28,6 +28,7 @@ const STORAGE_NAME = "boodschappen_naam";
 const STORAGE_ADMIN = "boodschappen_admin";
 const ADMIN_DAYS = 30;
 const MAX_QUANTITY = 10;
+const WIPE_CONFIRM_PHRASE = "VERWIJDER ALLES";
 
 function boodschappen() {
   return {
@@ -56,6 +57,10 @@ function boodschappen() {
     showAdminModal: false,
     adminInput: "",
     adminError: "",
+
+    showWipeModal: false,
+    wipeConfirmInput: "",
+    wipeBusy: false,
 
     toasts: [],
 
@@ -477,6 +482,43 @@ function boodschappen() {
         localStorage.removeItem(STORAGE_ADMIN);
       } catch {
         // localStorage geblokkeerd; niets aan te doen.
+      }
+    },
+
+    // --- Alles opschonen ---
+    // Bewust verstopt (geen zichtbare knop) en pas actief na het exact overtypen
+    // van WIPE_CONFIRM_PHRASE: dit is onomkeerbaar en verwijdert echt alles.
+
+    wipeConfirmPhrase: WIPE_CONFIRM_PHRASE,
+
+    get wipeConfirmMatches() {
+      return this.wipeConfirmInput.trim() === WIPE_CONFIRM_PHRASE;
+    },
+
+    openWipeModal() {
+      this.wipeConfirmInput = "";
+      this.showWipeModal = true;
+    },
+
+    async confirmWipe() {
+      if (!this.wipeConfirmMatches || this.wipeBusy) return;
+
+      this.wipeBusy = true;
+      try {
+        await this.api("/wipe", {
+          method: "POST",
+          body: { confirm: this.wipeConfirmInput.trim() },
+        });
+        this.showWipeModal = false;
+        this.tab = "open";
+        this.items = { open: [], ordered: [], rejected: [] };
+        this.frequent = [];
+        await this.loadTab();
+        this.toast("Alles opgeschoond");
+      } catch (error) {
+        this.toast(error.message, "error");
+      } finally {
+        this.wipeBusy = false;
       }
     },
 

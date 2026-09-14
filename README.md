@@ -43,6 +43,7 @@ schema.sql            het databaseschema
 | `GET /api/search?q=` | iedereen op de whitelist | AH-producten zoeken |
 | `GET /api/stats` | iedereen op de whitelist | lijst van personen die ooit iets aanvroegen |
 | `GET /api/stats?requester=Naam` | iedereen op de whitelist | logboek + top 10 meest bestelde producten van die persoon |
+| `POST /api/wipe` | beheerder + bevestigingszin in de body | **alles** verwijderen, onomkeerbaar |
 | `POST /api/admin` | — | beheerderscode controleren |
 
 `stats.html` is een puur informatieve, aparte pagina (geen basisfunctionaliteit)
@@ -72,6 +73,21 @@ De tab **Afgewezen** toont alleen afwijzingen van de laatste 30 dagen
 Oudere afwijzingen blijven gewoon bewaard en verschijnen wel volledig in het
 logboek op de statistiekenpagina — dat filter geldt alleen voor deze tab, niet
 voor `/api/stats`.
+
+### Alles opschonen
+
+Voor een schone start (bijv. na een testperiode) kan de beheerder de hele
+tabel leegmaken — `DELETE FROM items` op alle rijen, ongeacht status. Het
+schema en de indexen blijven gewoon staan, dus geen nieuwe D1-setup nodig.
+Onomkeerbaar en zonder back-up.
+
+Bewust niet als zichtbare knop: onderaan de pagina staat een piepklein,
+onopvallend tekstlinkje **"Volledig opschonen"** dat alleen verschijnt als je
+als beheerder bent ingelogd. Die opent een modal die pas een actieve knop
+toont nadat je de bevestigingszin `VERWIJDER ALLES` exact hebt overgetypt
+(zie `WIPE_CONFIRM_PHRASE` in [`app.js`](app.js)). De server controleert die
+bevestigingszin ook zelf nog eens in [`functions/api/wipe.js`](functions/api/wipe.js),
+naast de admincode.
 
 ### Toegang
 

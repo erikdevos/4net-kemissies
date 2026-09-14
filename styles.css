@@ -832,6 +832,27 @@ select {
 }
 
 /* ==========================================================================
+   Opschonen (bewust onopvallend)
+   ========================================================================== */
+
+.wipe-trigger {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.5rem;
+  opacity: 0.6;
+}
+
+.wipe-trigger:hover {
+  color: var(--danger);
+  opacity: 1;
+}
+
+/* ==========================================================================
    Modal
    ========================================================================== */
 
