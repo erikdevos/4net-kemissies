@@ -1,13 +1,18 @@
 import { listItems, addItem } from '../../../lib/db.js';
 import { json, error, readJson } from '../../../lib/http.js';
 
-const STATUSES = ['open', 'ordered'];
+const STATUSES = ['open', 'ordered', 'deleted', 'rejected'];
+
+// Afgewezen items ouder dan dit worden hier verborgen (blijven wel bewaard voor
+// de statistiekenpagina, zie lib/db.js listItems en itemLog).
+const REJECTED_VISIBLE_DAYS = 30;
 
 export async function onRequestGet({ request, env }) {
   const status = new URL(request.url).searchParams.get('status') || 'open';
   if (!STATUSES.includes(status)) return error('Onbekende status', 400);
 
-  const items = await listItems(env.DB, status);
+  const options = status === 'rejected' ? { maxAgeDays: REJECTED_VISIBLE_DAYS } : {};
+  const items = await listItems(env.DB, status, options);
   return json({ items });
 }
 

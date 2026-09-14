@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Boodschappen &middot; 4net</title>
+    <title>Kemissies - 4net Maastricht</title>
 
     <!-- Interne tool: niet indexeren -->
     <meta
@@ -41,7 +41,7 @@
 
     <header class="site-header">
       <div class="site-header__inner">
-        <div class="brand">
+        <a href="/" class="brand">
           <img
             src="resource/logo-4net.svg"
             alt="4net"
@@ -49,14 +49,17 @@
             width="140"
             height="52"
           />
-          <span class="brand__title">Boodschappen</span>
+          <span class="brand__title">Kemissies</span>
+        </a>
+        <div style="display: flex; gap: 0.5rem">
+          <a class="btn btn--ghost btn--sm" href="stats.html">Statistieken</a>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            @click="isAdmin ? logoutAdmin() : openAdminModal()"
+            x-text="isAdmin ? 'Uitloggen' : 'Beheer'"
+          ></button>
         </div>
-        <button
-          type="button"
-          class="btn btn--ghost btn--sm"
-          @click="isAdmin ? logoutAdmin() : openAdminModal()"
-          x-text="isAdmin ? 'Uitloggen' : 'Beheer'"
-        ></button>
       </div>
     </header>
 
@@ -67,7 +70,7 @@
         id="formulier"
         aria-labelledby="formulier-titel"
       >
-        <h2 class="panel__title" id="formulier-titel">Wat wil je hebben?</h2>
+        <h2 class="panel__title" id="formulier-titel">Wat is je verzoek?</h2>
 
         <form @submit.prevent="submit" novalidate>
           <div class="field search" @click.outside="resultsOpen = false">
@@ -209,7 +212,7 @@
                 id="opmerking"
                 x-model="form.note"
                 maxlength="200"
-                placeholder="Bijvoorbeeld: anders de light-variant"
+                placeholder="bijvoorbeeld: In plaats van iets anders"
               />
             </div>
 
@@ -221,7 +224,7 @@
                 @change="rememberName"
                 required
               >
-                <option value="">Kies je naam</option>
+                <option value="" disabled selected>Kies je naam</option>
                 <template x-for="name in names" :key="name">
                   <option :value="name" x-text="name"></option>
                 </template>
@@ -249,9 +252,9 @@
             </div>
           </div>
 
-          <p class="empty empty--inline" x-show="!form.product && !resultsOpen">
-            Zoek hierboven een product. Wat je vaker bestelt, staat onder
-            <strong>Vaker besteld</strong>.
+          <p class="empty empty--inline">
+            Let op: Een verzoek is geen garantie dat het product ook
+            daadwerkelijk besteld wordt.
           </p>
         </form>
       </section>
@@ -259,7 +262,7 @@
       <!-- ============ Lijst ============ -->
       <section class="panel" aria-labelledby="lijst-titel">
         <div class="panel__head">
-          <h2 class="panel__title" id="lijst-titel">De lijst</h2>
+          <h2 class="panel__title" id="lijst-titel">Verzoeken</h2>
           <button
             type="button"
             class="icon-btn"
@@ -291,7 +294,7 @@
             :aria-selected="tab === 'open'"
             @click="switchTab('open')"
           >
-            Te bestellen
+            Verzoeken
             <span
               class="tab__count"
               x-show="items.open.length"
@@ -315,6 +318,15 @@
             @click="switchTab('ordered')"
           >
             Besteld
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            :class="tab === 'rejected' && 'is-active'"
+            :aria-selected="tab === 'rejected'"
+            @click="switchTab('rejected')"
+          >
+            Afgewezen
           </button>
         </div>
 
@@ -428,7 +440,7 @@
                       type="button"
                       class="btn btn--sm btn--danger"
                       x-show="isAdmin"
-                      @click="setStatus(item, 'deleted', 'Dit item verwijderen?')"
+                      @click="rejectItem(item)"
                       :disabled="busyId === item.id"
                     >
                       Verwijderen
@@ -451,6 +463,7 @@
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
+                x-show="isAdmin"
                 @click="copyList"
               >
                 Lijst kopieren
@@ -470,11 +483,11 @@
             </div>
           </div>
 
-          <!-- Vaker besteld -->
+          <!-- Verzoeken lijst -->
           <div x-show="tab === 'frequent'" role="tabpanel">
             <p class="empty" x-show="!frequent.length">
               Zodra er een ronde besteld is, verschijnen hier de producten die
-              jullie het vaakst halen.
+              we het vaakst bestellen.
             </p>
 
             <ul class="grid">
@@ -569,6 +582,71 @@
                       :disabled="busyId === item.id"
                     >
                       Terug op bestellijst
+                    </button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </div>
+
+          <!-- Afgewezen -->
+          <div x-show="tab === 'rejected'" role="tabpanel">
+            <p class="field__hint" x-show="items.rejected.length">
+              Alleen de afwijzingen van de laatste 30 dagen. Een volledig
+              overzicht per persoon staat op de
+              <a href="stats.html">statistiekenpagina</a>.
+            </p>
+            <p class="empty" x-show="!items.rejected.length">
+              Er is niets afgewezen in de laatste 30 dagen.
+            </p>
+
+            <ul class="items">
+              <template x-for="item in items.rejected" :key="item.id">
+                <li class="item item--done">
+                  <a
+                    class="item__image-link"
+                    :href="item.productUrl || null"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <img
+                      class="item__image"
+                      :src="item.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
+                  </a>
+                  <div class="item__body">
+                    <a
+                      class="item__title"
+                      :href="item.productUrl || null"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <span x-text="item.title"></span>
+                    </a>
+                    <p class="item__meta">
+                      <span x-text="item.requester"></span>
+                    </p>
+                    <p
+                      class="item__note"
+                      x-show="item.rejectReason"
+                      x-text="'Reden: ' + item.rejectReason"
+                    ></p>
+                  </div>
+                  <div class="item__quantity">
+                    <span class="tag" x-text="item.quantity + 'x'"></span>
+                  </div>
+                  <div class="item__actions">
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--danger"
+                      x-show="isAdmin"
+                      @click="purgeItem(item)"
+                      :disabled="busyId === item.id"
+                    >
+                      Definitief verwijderen
                     </button>
                   </div>
                 </li>

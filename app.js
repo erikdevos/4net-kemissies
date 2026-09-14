@@ -40,7 +40,7 @@ function boodschappen() {
     busyId: null,
     bulkBusy: false,
 
-    items: { open: [], ordered: [] },
+    items: { open: [], ordered: [], rejected: [] },
     frequent: [],
 
     form: { product: null, quantity: 1, note: "", requester: "" },
@@ -128,9 +128,14 @@ function boodschappen() {
           const { products } = await this.api("/frequent");
           this.frequent = products;
         } else {
-          const status = this.tab === "ordered" ? "ordered" : "open";
+          const status =
+            this.tab === "ordered"
+              ? "ordered"
+              : this.tab === "rejected"
+                ? "rejected"
+                : "open";
           const { items } = await this.api(`/items?status=${status}`);
-          this.items[status] = items;
+          this.items[this.tab] = items;
         }
       } catch (error) {
         this.toast(error.message, "error");
@@ -308,6 +313,47 @@ function boodschappen() {
         });
         await this.loadTab();
         this.toast(this.statusMessage(status));
+      } catch (error) {
+        this.toast(error.message, "error");
+      } finally {
+        this.busyId = null;
+      }
+    },
+
+    // Alleen de beheerder wijst af, en mag er een reden bij geven. Zelf intrekken
+    // (setStatus hierboven) vraagt daar bewust niet naar.
+    async rejectItem(item) {
+      if (!confirm("Dit item afwijzen?")) return;
+      const reason = (
+        prompt("Reden voor afwijzen (optioneel):", "") || ""
+      ).trim();
+
+      this.busyId = item.id;
+      try {
+        await this.api(`/items/${item.id}`, {
+          method: "PATCH",
+          body: { status: "rejected", requester: this.form.requester, reason },
+        });
+        await this.loadTab();
+        this.toast("Afgewezen");
+      } catch (error) {
+        this.toast(error.message, "error");
+      } finally {
+        this.busyId = null;
+      }
+    },
+
+    // Definitief verwijderen van een afgewezen item: geen soft delete meer, de
+    // rij verdwijnt echt uit D1 en dus ook uit het overzicht en de logs.
+    async purgeItem(item) {
+      if (!confirm(`"${item.title}" definitief verwijderen? Dit kan niet ongedaan gemaakt worden.`))
+        return;
+
+      this.busyId = item.id;
+      try {
+        await this.api(`/items/${item.id}`, { method: "DELETE" });
+        this.items.rejected = this.items.rejected.filter((i) => i.id !== item.id);
+        this.toast("Definitief verwijderd");
       } catch (error) {
         this.toast(error.message, "error");
       } finally {

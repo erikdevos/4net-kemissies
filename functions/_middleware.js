@@ -9,7 +9,10 @@ import { escapeHtml } from '../lib/http.js';
 export async function onRequest(context) {
   const { request, env, next } = context;
 
-  const ip = request.headers.get('CF-Connecting-IP') || '';
+  // LOCAL_DEV bestaat alleen in .dev.vars, nooit in productie: `wrangler pages dev`
+  // stuurt geen CF-Connecting-IP mee, dus zonder deze val-terug is lokaal testen
+  // onmogelijk achter de IP-whitelist.
+  const ip = request.headers.get('CF-Connecting-IP') || (env.LOCAL_DEV === '1' ? '127.0.0.1' : '');
   const { allowed, reason } = checkIp(ip, env.ALLOWED_IPS);
   if (allowed) return next();
 

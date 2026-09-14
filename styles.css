@@ -10,7 +10,7 @@
 
 :root {
   /* 4net-huisstijl, rechtstreeks van de site */
-  --ink: #2b2d30;
+  --ink: #202122;
   --line-strong: #bebbb6;
   --brand: #256176; /* teal - component-kleur, hier voor tabs/links/focus */
   --cta: #f85322; /* oranje - hun echte primaire actieknop-kleur */
@@ -22,7 +22,7 @@
   --cta-dark: #d6431a;
   --page: #faf6f0; /* warme crème, ook een echte 4net component-kleur */
   --surface: #fff;
-  --muted: #6b6f76;
+  --muted: #757575;
   --line: #e8e4dd;
   --danger: #b3261e;
   --danger-soft: #fdecea;
@@ -114,6 +114,7 @@ img {
   align-items: center;
   gap: 1rem;
   min-width: 0;
+  text-decoration: none;
 }
 
 .brand__logo {
@@ -129,6 +130,7 @@ img {
   border-left: 1px solid var(--line);
   white-space: nowrap;
   color: var(--ink);
+  text-decoration: none;
 }
 
 /* ==========================================================================
@@ -185,6 +187,16 @@ img {
   }
 }
 
+/* Eenkoloms variant, voor pagina's zonder het formulier ernaast (bijv. stats.html) */
+.layout--single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 46rem;
+}
+.layout--single .panel + .panel,
+.layout--single .panel + div {
+  margin-top: 2rem;
+}
+
 /* ==========================================================================
    Formuliervelden
    ========================================================================== */
@@ -226,7 +238,7 @@ select {
   background: var(--surface);
   color: var(--ink);
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.9rem;
   letter-spacing: normal;
 }
 
@@ -235,6 +247,12 @@ select:focus {
   border-color: var(--cta);
   outline: none;
   box-shadow: 0 0 0 3px rgba(248, 83, 34, 0.18);
+}
+
+input:placeholder-shown,
+input:placeholder,
+textarea:placeholder-shown {
+  color: var(--muted);
 }
 
 select {
@@ -701,6 +719,7 @@ select {
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
+  text-decoration: none;
   transition:
     background-color 0.15s,
     border-color 0.15s,

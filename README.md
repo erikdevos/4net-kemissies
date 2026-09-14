@@ -20,6 +20,8 @@ serverside, waar CORS niet bestaat.
 ```
 index.html            de hele UI
 app.js                Alpine-component
+stats.html            statistieken per persoon (logboek + top 10)
+stats.js              Alpine-component voor stats.html
 styles.css            4net-huisstijl
 functions/
   _middleware.js      IP-controle voor alle routes
@@ -32,17 +34,44 @@ schema.sql            het databaseschema
 
 | Route | Wie | Wat |
 |---|---|---|
-| `GET /api/items?status=open\|ordered` | iedereen op de whitelist | lijst ophalen |
+| `GET /api/items?status=open\|ordered\|deleted\|rejected` | iedereen op de whitelist | lijst ophalen |
 | `POST /api/items` | iedereen op de whitelist | verzoek toevoegen |
 | `PATCH /api/items/:id` | beheerder, of jezelf bij een eigen open verzoek | status of aantal wijzigen |
 | `DELETE /api/items/:id` | beheerder | definitief verwijderen |
 | `POST /api/order-all` | beheerder | alles open op besteld |
 | `GET /api/frequent` | iedereen op de whitelist | vaker besteld |
 | `GET /api/search?q=` | iedereen op de whitelist | AH-producten zoeken |
+| `GET /api/stats` | iedereen op de whitelist | lijst van personen die ooit iets aanvroegen |
+| `GET /api/stats?requester=Naam` | iedereen op de whitelist | logboek + top 10 meest bestelde producten van die persoon |
 | `POST /api/admin` | — | beheerderscode controleren |
+
+`stats.html` is een puur informatieve, aparte pagina (geen basisfunctionaliteit)
+en vereist bewust geen beheerderscode — alleen de IP-whitelist.
 
 De beheerderscode gaat mee als `X-Admin-Code`-header en wordt serverside
 gecontroleerd. In de browser onthoudt de tool hem 30 dagen.
+
+### Statussen van een item
+
+Een item doorloopt `open` → `ordered` (besteld), of verlaat de open lijst op één
+van twee manieren die bewust gescheiden zijn:
+
+- **`deleted`** — de aanvrager trekt zijn eigen open verzoek in (`Intrekken`).
+  Geen reden nodig, geen beheerder nodig.
+- **`rejected`** — de beheerder wijst het verzoek af (`Verwijderen`) en kan er
+  optioneel een reden (`reject_reason`) bij geven. Deze items komen terug in de
+  tab **Afgewezen**, zichtbaar voor iedereen — intrekkingen (`deleted`) juist
+  niet, dat overzicht is uitsluitend voor beheerdersbeslissingen.
+
+Beide zijn een soft delete: de rij blijft in D1 staan met een `deleted_at`.
+Alleen `DELETE /api/items/:id` verwijdert een rij echt — een beheerder kan dit
+vanuit de tab **Afgewezen** doen met **Definitief verwijderen**.
+
+De tab **Afgewezen** toont alleen afwijzingen van de laatste 30 dagen
+(`REJECTED_VISIBLE_DAYS` in [`functions/api/items/index.js`](functions/api/items/index.js)).
+Oudere afwijzingen blijven gewoon bewaard en verschijnen wel volledig in het
+logboek op de statistiekenpagina — dat filter geldt alleen voor deze tab, niet
+voor `/api/stats`.
 
 ### Toegang
 
@@ -84,9 +113,9 @@ Alles in de Cloudflare-dashboard, geen command line nodig.
 doorsturen en voeg het toe aan `ALLOWED_IPS`. Wisselt het adres vaak, gebruik dan
 CIDR (`2a02:1234:5678::/48`) in plaats van losse adressen.
 
-**Verwijderd item terughalen:** verwijderen via de knop is een soft delete. De rij
-staat nog in D1 met een `deleted_at`; in de D1-console kun je `status` terugzetten
-op `open`. Alleen `DELETE /api/items/:id` verwijdert echt.
+**Ingetrokken of afgewezen item terughalen:** zie [Statussen van een item](#statussen-van-een-item)
+hierboven — beide zijn een soft delete. In de D1-console kun je `status`
+terugzetten op `open` (en voor een afwijzing ook `reject_reason` leegmaken).
 
 **Er staan geen geheimen in de repo.** De beheerderscode en de IP-lijst leven als
 omgevingsvariabelen in Cloudflare.
@@ -94,8 +123,58 @@ omgevingsvariabelen in Cloudflare.
 ## Lokaal draaien
 
 Er is geen dev-server nodig om aan de CSS of HTML te werken, maar wil je de API
-erbij, dan kan dat met Wrangler:
+erbij (dus ook echte data zien), dan kan dat met Wrangler. Let op: openen via
+een simpele static file server (zoals VS Code's Live Preview) werkt niet — die
+voert `functions/` niet uit, dus `/api/...`-aanroepen geven altijd 404.
+
+**Eenmalige setup:**
+
+1. Maak lokaal (niet committen, staat al in `.gitignore`) een `wrangler.toml`:
+
+   ```toml
+   name = "boodschappen"
+   pages_build_output_dir = "."
+
+   [[d1_databases]]
+   binding = "DB"
+   database_name = "boodschappen"
+   database_id = "<database-id-uit-cloudflare-dashboard>"
+   ```
+
+2. Maak een `.dev.vars` (ook gitignored):
+
+   ```
+   ADMIN_CODE=iets-om-lokaal-mee-in-te-loggen
+   ALLOWED_IPS=127.0.0.1
+   LOCAL_DEV=1
+   ```
+
+   `LOCAL_DEV=1` is nodig omdat `wrangler pages dev` lokaal geen
+   `CF-Connecting-IP`-header meestuurt — zonder die vlag houdt de
+   IP-whitelist in [`functions/_middleware.js`](functions/_middleware.js) je
+   altijd buiten de deur, ook al staat `127.0.0.1` in `ALLOWED_IPS`. Deze
+   variabele bestaat alleen lokaal en heeft geen enkel effect in productie.
+
+3. Zet het schema op de lokale D1 (die begint leeg, los van productie):
+
+   ```bash
+   npx wrangler d1 execute DB --local --file=schema.sql
+   ```
+
+**Starten:**
 
 ```bash
-npx wrangler pages dev . --d1 DB
+npx wrangler pages dev .
 ```
+
+Dit draait tegen de **lokale** D1, niet tegen productie — er bestaat geen
+`--remote`-vlag voor `wrangler pages dev`. Wil je met echte data testen,
+exporteer dan eenmalig de productiedata en importeer die lokaal:
+
+```bash
+npx wrangler d1 export boodschappen --remote --output=export.sql
+npx wrangler d1 execute DB --local --file=export.sql
+```
+
+Wijzig je het schema (zoals `reject_reason`), voer dezelfde `ALTER TABLE`
+dan ook los uit op de lokale database én op productie met `--remote`.

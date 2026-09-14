@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Statistieken &middot; Boodschappen &middot; 4net</title>
+
+    <!-- Interne tool: niet indexeren -->
+    <meta
+      name="robots"
+      content="noindex, nofollow, noarchive, nosnippet, noimageindex"
+    />
+
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="styles.css" />
+
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+  </head>
+
+  <body x-data="stats()" x-cloak>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="brand">
+          <img
+            src="resource/logo-4net.svg"
+            alt="4net"
+            class="brand__logo"
+            width="140"
+            height="52"
+          />
+          <span class="brand__title">Boodschappen</span>
+        </a>
+        <a class="btn btn--ghost btn--sm" href="index.html">Naar de lijst</a>
+      </div>
+    </header>
+
+    <main class="layout layout--single">
+      <section class="panel" aria-labelledby="stats-titel">
+        <h2 class="panel__title" id="stats-titel">Statistieken per persoon</h2>
+        <p class="modal__text" style="margin-top: 0.5rem">
+          Puur informatief: een logboek van alle verzoeken en de meest bestelde
+          producten per persoon.
+        </p>
+
+        <div class="field" style="margin-top: 1.5rem">
+          <label for="persoon">Kies een persoon</label>
+          <select
+            id="persoon"
+            x-model="selected"
+            @change="selectRequester(selected)"
+          >
+            <option value="">Kies...</option>
+            <template x-for="r in requesters" :key="r.requester">
+              <option
+                :value="r.requester"
+                x-text="`${r.requester} (${r.total})`"
+              ></option>
+            </template>
+          </select>
+        </div>
+
+        <p
+          class="field__hint field__hint--error"
+          x-show="errorMessage"
+          x-text="errorMessage"
+        ></p>
+      </section>
+
+      <template x-if="selected">
+        <div>
+          <div class="loading" x-show="loading">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Ophalen...</span>
+          </div>
+
+          <div x-show="!loading">
+            <!-- Logboek -->
+            <section class="panel" aria-labelledby="log-titel">
+              <h2 class="panel__title" id="log-titel">
+                Logboek &middot; <span x-text="selected"></span>
+              </h2>
+
+              <p class="empty" x-show="!log.length">
+                Nog geen verzoeken van deze persoon.
+              </p>
+
+              <ul class="items">
+                <template x-for="item in log" :key="item.id">
+                  <li class="item">
+                    <img
+                      class="item__image"
+                      :src="item.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
+                    <div class="item__body">
+                      <span class="item__title" x-text="item.title"></span>
+                      <p class="item__meta">
+                        <span x-text="statusLabel(item.status)"></span>
+                        <span x-text="date(item.createdAt)"></span>
+                        <span
+                          x-show="item.price !== null"
+                          x-text="price(item.price)"
+                        ></span>
+                      </p>
+                      <p
+                        class="item__note"
+                        x-show="item.rejectReason"
+                        x-text="'Reden: ' + item.rejectReason"
+                      ></p>
+                    </div>
+                    <div class="item__quantity">
+                      <span class="tag" x-text="item.quantity + 'x'"></span>
+                    </div>
+                  </li>
+                </template>
+              </ul>
+            </section>
+
+            <!-- Top 10 -->
+            <section class="panel" aria-labelledby="top-titel">
+              <h2 class="panel__title" id="top-titel">
+                Top 10 meest besteld &middot; <span x-text="selected"></span>
+              </h2>
+
+              <p class="empty" x-show="!topProducts.length">
+                Nog niets besteld voor deze persoon.
+              </p>
+
+              <ul class="grid">
+                <template
+                  x-for="product in topProducts"
+                  :key="product.productId ?? product.title"
+                >
+                  <li class="card">
+                    <img
+                      class="card__image"
+                      :src="product.imageUrl"
+                      :alt="''"
+                      loading="lazy"
+                      @error="$el.style.visibility = 'hidden'"
+                    />
+                    <p class="card__title" x-text="product.title"></p>
+                    <p class="card__meta">
+                      <span
+                        class="tag"
+                        x-text="product.totalQuantity + 'x'"
+                      ></span>
+                      <span x-text="product.times + ' keer besteld'"></span>
+                    </p>
+                  </li>
+                </template>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </template>
+    </main>
+
+    <script src="stats.js"></script>
+  </body>
+</html>

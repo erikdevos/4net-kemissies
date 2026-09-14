@@ -16,8 +16,16 @@ CREATE TABLE IF NOT EXISTS items (
   price       REAL,
   quantity    INTEGER NOT NULL DEFAULT 1,
   note        TEXT,
-  status      TEXT NOT NULL DEFAULT 'open'
+  -- 'open' | 'ordered' | 'deleted' (eigen intrekking) | 'rejected' (afgewezen
+  -- door de beheerder, met optioneel reject_reason)
+  status      TEXT NOT NULL DEFAULT 'open',
+  reject_reason TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_status  ON items(status);
 CREATE INDEX IF NOT EXISTS idx_items_product ON items(product_id);
+
+-- Migratie voor een bestaande database (lokaal en productie): CREATE TABLE
+-- hierboven raakt een tabel die al bestaat niet meer aan, dus voer dit eenmalig
+-- apart uit als reject_reason nog ontbreekt.
+-- ALTER TABLE items ADD COLUMN reject_reason TEXT;

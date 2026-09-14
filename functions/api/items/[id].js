@@ -2,7 +2,7 @@ import { getItem, setStatus, hardDelete, updateQuantity } from '../../../lib/db.
 import { isAdmin } from '../../../lib/auth.js';
 import { json, error, readJson } from '../../../lib/http.js';
 
-const STATUSES = ['open', 'ordered', 'deleted'];
+const STATUSES = ['open', 'ordered', 'deleted', 'rejected'];
 
 export async function onRequestPatch({ request, env, params }) {
   const item = await getItem(env.DB, params.id);
@@ -29,11 +29,18 @@ export async function onRequestPatch({ request, env, params }) {
   const status = body.status;
   if (!STATUSES.includes(status)) return error('Onbekende status', 400);
 
-  // Alles behalve je eigen verzoek intrekken vereist de admincode.
+  // Alleen zelf intrekken (status 'deleted') mag zonder admincode, en alleen door
+  // de eigenaar van een open verzoek. Afwijzen (status 'rejected') is uitsluitend
+  // aan de beheerder.
   const selfWithdrawal = owner && status === 'deleted';
   if (!admin && !selfWithdrawal) return error('Admincode vereist', 403);
 
-  const ok = await setStatus(env.DB, params.id, status);
+  const reason =
+    status === 'rejected' && typeof body.reason === 'string'
+      ? body.reason.trim().slice(0, 300)
+      : null;
+
+  const ok = await setStatus(env.DB, params.id, status, reason);
   if (!ok) return error('Status kon niet worden gewijzigd', 409);
 
   return json({ item: await getItem(env.DB, params.id) });
