@@ -133,6 +133,13 @@ img {
   text-decoration: none;
 }
 
+.site-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 /* ==========================================================================
    Layout
    ========================================================================== */
@@ -685,6 +692,10 @@ select.is-invalid {
   background: var(--cta);
 }
 
+.tag--env {
+  background: var(--cta);
+}
+
 /* ==========================================================================
    Vaker besteld
    ========================================================================== */
@@ -993,6 +1004,11 @@ select.is-invalid {
    Opschonen (bewust onopvallend)
    ========================================================================== */
 
+.wipe-footer {
+  text-align: center;
+  padding: 0 2rem 3rem;
+}
+
 .wipe-trigger {
   border: 0;
   background: none;
@@ -1050,6 +1066,15 @@ select.is-invalid {
   font-size: 0.9rem;
   color: var(--muted);
   margin-bottom: 1.1rem;
+}
+
+/* Als introtekst direct onder een panel__title (i.p.v. in een modal), iets
+   lucht houden t.o.v. de titel erboven. */
+.panel__title + .modal__text {
+  margin-top: 0.5rem;
+}
+.modal__text + .field {
+  margin-top: 1.5rem;
 }
 .modal__actions {
   display: flex;

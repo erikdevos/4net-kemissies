@@ -52,7 +52,8 @@
           />
           <span class="brand__title">Kemissies</span>
         </a>
-        <div style="display: flex; gap: 0.5rem">
+        <span class="tag tag--env" x-show="$store.app.isTest">TEST</span>
+        <div class="site-header__actions">
           <a
             class="btn btn--ghost btn--sm"
             href="#/stats"
@@ -677,7 +678,7 @@
         <div class="layout layout--single" x-data="statsView">
           <section class="panel" aria-labelledby="overzicht-titel">
             <h2 class="panel__title" id="overzicht-titel">Leuke weetjes</h2>
-            <p class="modal__text" style="margin-top: 0.5rem">
+            <p class="modal__text">
               Over iedereen heen: wie en wat het vaakst op de lijst staat.
             </p>
 
@@ -737,11 +738,11 @@
             <h2 class="panel__title" id="stats-titel">
               Statistieken per persoon
             </h2>
-            <p class="modal__text" style="margin-top: 0.5rem">
+            <p class="modal__text">
               Puur informatief: een logboek van alle verzoeken per persoon.
             </p>
 
-            <div class="field" style="margin-top: 1.5rem">
+            <div class="field">
               <label for="persoon">Kies een persoon</label>
               <select
                 id="persoon"
@@ -827,8 +828,8 @@
     <!-- Verstopt met opzet: geen zichtbare actieknop, alleen voor de beheerder,
          helemaal onderaan de pagina. -->
     <footer
+      class="wipe-footer"
       x-show="$store.app.route === 'list' && $store.app.isAdmin"
-      style="text-align: center; padding: 0 2rem 3rem"
     >
       <button
         type="button"

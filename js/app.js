@@ -42,11 +42,19 @@ document.addEventListener("alpine:init", () => {
 
     toasts: [],
 
+    // Alleen waar op de testomgeving (ENVIRONMENT=test), voor het "TEST"-label
+    // naast de titel. Faalt de check onverhoopt, dan blijft dit gewoon false -
+    // liever een keer geen label op test dan per ongeluk wél op productie.
+    isTest: false,
+
     init() {
       initRouter((route) => {
         this.route = route;
       });
       this.adminCode = this.readAdminCode();
+      this.api("/env")
+        .then(({ isTest }) => (this.isTest = isTest))
+        .catch(() => {});
     },
 
     get isAdmin() {
