@@ -211,26 +211,6 @@
                 </div>
               </template>
 
-              <template x-if="duplicateItem">
-                <div class="duplicate-hint">
-                  <p>
-                    <strong x-text="duplicateItem.requester"></strong> heeft
-                    dit al op de lijst staan
-                    (<span x-text="duplicateItem.quantity"></span>x). Extra
-                    interesse? Zet er een <strong>+1</strong> bij in plaats
-                    van een nieuw verzoek.
-                  </p>
-                  <button
-                    type="button"
-                    class="btn btn--sm btn--ghost"
-                    @click="boostDuplicate"
-                    :disabled="busyId === duplicateItem.id"
-                  >
-                    +1 op dat verzoek
-                  </button>
-                </div>
-              </template>
-
               <div x-show="form.product">
                 <div class="field">
                   <label for="aantal">Aantal</label>

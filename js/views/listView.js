@@ -51,7 +51,6 @@ document.addEventListener("alpine:init", () => {
 
     form: { product: null, quantity: 1, note: "", requester: "" },
     requesterError: "",
-    duplicateItem: null,
 
     query: "",
     results: [],
@@ -249,7 +248,6 @@ document.addEventListener("alpine:init", () => {
       this.results = [];
       this.resultsOpen = false;
       this.searchError = "";
-      this.duplicateItem = this.findDuplicate(product);
       this.$nextTick(() => this.$refs.quantity?.focus());
     },
 
@@ -257,42 +255,6 @@ document.addEventListener("alpine:init", () => {
       this.form.product = null;
       this.form.quantity = 1;
       this.form.note = "";
-      this.duplicateItem = null;
-    },
-
-    // Staat dit product al open op de lijst, van iemand anders? Dan is "+1" op
-    // dat verzoek zetten nuttiger dan een tweede, losse regel aanmaken (van je
-    // eigen verzoeken samenvoegen doet de server al automatisch bij het indienen).
-    findDuplicate(product) {
-      return (
-        this.items.open.find((item) => {
-          if (this.isMine(item)) return false;
-          return product.productId != null
-            ? item.productId === product.productId
-            : item.title.toLowerCase() === product.title.toLowerCase();
-        }) || null
-      );
-    },
-
-    async boostDuplicate() {
-      const item = this.duplicateItem;
-      if (!item || this.busyId === item.id) return;
-
-      this.busyId = item.id;
-      try {
-        const { item: updated } = await this.$store.app.api(`/items/${item.id}`, {
-          method: "PATCH",
-          body: { boost: true },
-        });
-        Object.assign(item, updated);
-        this.$store.app.toast(`+1 gezet op het verzoek van ${item.requester}`);
-        this.clearProduct();
-        if (this.tab === "open") await this.loadTab({ silent: true });
-      } catch (error) {
-        this.$store.app.toast(error.message, "error");
-      } finally {
-        this.busyId = null;
-      }
     },
 
     focusSearch() {
@@ -366,12 +328,15 @@ document.addEventListener("alpine:init", () => {
 
     // --- Acties op items ---
 
+    // Bij meerdere aanvragers staat item.requester als "Erik & Steve" (zie
+    // mergeRequesters in lib/db.js) - dus op naam matchen i.p.v. hele string.
     isMine(item) {
-      return (
-        item.status === "open" &&
-        Boolean(this.form.requester) &&
-        item.requester.toLowerCase() === this.form.requester.toLowerCase()
-      );
+      if (item.status !== "open" || !this.form.requester) return false;
+      const mine = this.form.requester.toLowerCase();
+      return item.requester
+        .split("&")
+        .map((name) => name.trim().toLowerCase())
+        .includes(mine);
     },
 
     canEdit(item) {
