@@ -10,24 +10,32 @@ product op de lijst, één persoon bestelt de hele ronde bij Albert Heijn.
 
 ## Hoe het werkt
 
-Statische frontend plus Cloudflare Pages Functions, met D1 (SQLite) als database.
-Er is geen build-stap en geen framework-installatie: Alpine.js komt van een CDN.
+Eén single-page application (hash-routing: `/` en `/#/stats`) plus Cloudflare
+Pages Functions, met D1 (SQLite) als database. Er is geen build-stap en geen
+framework-installatie: Alpine.js komt van een CDN, de frontend-JS draait als
+losse ES modules (`<script type="module">`) - direct bewerkbaar en deploybaar
+zonder npm install of bundelen.
 
 Frontend en API draaien op hetzelfde domein. Daarom is er geen CORS in het spel en
 is er geen proxy nodig om bij `api.ah.nl` te komen: de Function doet die aanroep
 serverside, waar CORS niet bestaat.
 
 ```
-index.html            de hele UI
-app.js                Alpine-component
-stats.html            statistieken per persoon (logboek + top 10)
-stats.js              Alpine-component voor stats.html
-styles.css            4net-huisstijl
+index.html             de hele UI-shell (head, header, beide routes, modals)
+styles.css             4net-huisstijl
+stats.html             kleine redirect naar /#/stats, voor oude bookmarks
+js/
+  app.js               entry point + root Alpine-component (routing, toasts,
+                        beheer/adminCode, generieke bevestigingsdialoog, api())
+  router.js            minimale hash-router
+  lib/format.js         gedeelde price()/date()/since()-helpers
+  views/listView.js     Alpine-component voor de boodschappenlijst (/)
+  views/statsView.js    Alpine-component voor statistieken (/#/stats)
 functions/
-  _middleware.js      IP-controle voor alle routes
-  api/                de endpoints
-lib/                  gedeelde code (AH, database, toegang)
-schema.sql            het databaseschema
+  _middleware.js       IP-controle voor alle routes
+  api/                 de endpoints
+lib/                   gedeelde backend-code (AH, database, toegang)
+schema.sql             het databaseschema
 ```
 
 ### Endpoints
@@ -46,7 +54,7 @@ schema.sql            het databaseschema
 | `POST /api/wipe` | beheerder + bevestigingszin in de body | **alles** verwijderen, onomkeerbaar |
 | `POST /api/admin` | — | beheerderscode controleren |
 
-`stats.html` is een puur informatieve, aparte pagina (geen basisfunctionaliteit)
+De statistieken-route (`/#/stats`) is puur informatief (geen basisfunctionaliteit)
 en vereist bewust geen beheerderscode — alleen de IP-whitelist.
 
 De beheerderscode gaat mee als `X-Admin-Code`-header en wordt serverside
@@ -85,7 +93,7 @@ Bewust niet als zichtbare knop: onderaan de pagina staat een piepklein,
 onopvallend tekstlinkje **"Volledig opschonen"** dat alleen verschijnt als je
 als beheerder bent ingelogd. Die opent een modal die pas een actieve knop
 toont nadat je de bevestigingszin `VERWIJDER ALLES` exact hebt overgetypt
-(zie `WIPE_CONFIRM_PHRASE` in [`app.js`](app.js)). De server controleert die
+(zie `WIPE_CONFIRM_PHRASE` in [`js/app.js`](js/app.js)). De server controleert die
 bevestigingszin ook zelf nog eens in [`functions/api/wipe.js`](functions/api/wipe.js),
 naast de admincode.
 
@@ -123,7 +131,7 @@ Alles in de Cloudflare-dashboard, geen command line nodig.
 ## Onderhoud
 
 **Collega toevoegen of verwijderen:** de lijst met namen staat bovenin
-[`app.js`](app.js) als `NAMES`.
+[`js/views/listView.js`](js/views/listView.js) als `NAMES`.
 
 **Iemand krijgt geen toegang:** laat diegene het IP-adres van de weigerpagina
 doorsturen en voeg het toe aan `ALLOWED_IPS`. Wisselt het adres vaak, gebruik dan

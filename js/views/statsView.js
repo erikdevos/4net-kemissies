@@ -1,8 +1,10 @@
-// Statistieken per persoon - Alpine.js component.
-// Puur informatief, geen acties: geen admincode, geen mutaties.
+// Alpine-component voor de statistieken-view (route '/stats'). Puur
+// informatief, geen mutaties: geen admincode nodig, alleen this.$store.app.api()
+// (de gedeelde Alpine.store, zie js/app.js) voor de fetch-wrapper.
+import { price, date } from "../lib/format.js";
 
-function stats() {
-  return {
+document.addEventListener("alpine:init", () => {
+  Alpine.data("statsView", () => ({
     requesters: [],
     selected: "",
     log: [],
@@ -15,25 +17,32 @@ function stats() {
 
     async init() {
       const { requesters, topOverall, topRequester, topProduct } =
-        await this.api("/stats");
+        await this.$store.app.api("/stats");
       this.requesters = requesters;
       this.topOverall = topOverall;
       this.topRequester = topRequester;
       this.topProduct = topProduct;
     },
 
-    async api(path) {
-      const response = await fetch(`/api${path}`);
-      let data = {};
-      try {
-        data = await response.json();
-      } catch {
-        // Geen JSON terug: laat de statuscode het verhaal vertellen.
+    // De globale top 10 en (zodra iemand gekozen is) de top 10 van die
+    // persoon delen exact dezelfde velden, dus worden ze via één gedeeld
+    // <template x-for>-blok in index.html gerenderd, aangestuurd door deze lijst.
+    get productSections() {
+      const sections = [
+        {
+          title: "Top 10 meest besteld (globaal)",
+          products: this.topOverall,
+          emptyText: "Nog niets besteld.",
+        },
+      ];
+      if (this.selected) {
+        sections.push({
+          title: `Top 10 meest besteld · ${this.selected}`,
+          products: this.topProducts,
+          emptyText: "Nog niets besteld voor deze persoon.",
+        });
       }
-      if (!response.ok) {
-        throw new Error(data.error || `Er ging iets mis (${response.status})`);
-      }
-      return data;
+      return sections;
     },
 
     async selectRequester(requester) {
@@ -47,7 +56,7 @@ function stats() {
       this.loading = true;
       this.errorMessage = "";
       try {
-        const data = await this.api(
+        const data = await this.$store.app.api(
           `/stats?requester=${encodeURIComponent(requester)}`,
         );
         this.log = data.log;
@@ -68,21 +77,7 @@ function stats() {
       return "Open";
     },
 
-    price(value) {
-      if (value === null || value === undefined) return "";
-      return new Intl.NumberFormat("nl-NL", {
-        style: "currency",
-        currency: "EUR",
-      }).format(value);
-    },
-
-    date(value) {
-      if (!value) return "";
-      return new Date(value).toLocaleDateString("nl-NL", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-    },
-  };
-}
+    price,
+    date: (value) => date(value, { withYear: true }),
+  }));
+});

@@ -1,5 +1,8 @@
-// Boodschappentool - Alpine.js component.
-// De API draait op hetzelfde domein (/api/...), dus er is geen CORS en geen config.
+// Alpine-component voor de boodschappenlijst-view (route '/'): zoeken bij AH,
+// verzoek indienen, tabs (open/vaker besteld/besteld/afgewezen), item-acties.
+// Gedeelde diensten (toasts, bevestigingsdialoog, adminstatus, api-wrapper)
+// komen van de Alpine.store via this.$store.app - zie js/app.js.
+import { price, date, since, relativeShort } from "../lib/format.js";
 
 // Eén plek om collega's toe te voegen of te verwijderen.
 const NAMES = [
@@ -25,17 +28,14 @@ const NAMES = [
 ];
 
 const STORAGE_NAME = "boodschappen_naam";
-const STORAGE_ADMIN = "boodschappen_admin";
-const ADMIN_DAYS = 30;
 const MAX_QUANTITY = 10;
-const WIPE_CONFIRM_PHRASE = "VERWIJDER ALLES";
 const AUTO_REFRESH_MS = 30000;
-// Deadline voor de wekelijkse ronde: donderdag 12:00 's middags.
+// Deadline voor de wekelijkse ronde.
 const DEADLINE_WEEKDAY = 4; // 0 = zondag ... 4 = donderdag
 const DEADLINE_HOUR = 16;
 
-function boodschappen() {
-  return {
+document.addEventListener("alpine:init", () => {
+  Alpine.data("listView", () => ({
     names: NAMES,
     maxQuantity: MAX_QUANTITY,
 
@@ -60,51 +60,75 @@ function boodschappen() {
     searchError: "",
     searchTimer: null,
 
-    adminCode: null,
-    showAdminModal: false,
-    adminInput: "",
-    adminError: "",
-
-    showWipeModal: false,
-    wipeConfirmInput: "",
-    wipeBusy: false,
-
-    // Eén generieke, native <dialog>-gebaseerde bevestiging voor intrekken,
-    // afwijzen en bulk-acties - vervangt de kale confirm()/prompt() dialogen.
-    confirmDialog: {
-      title: "",
-      text: "",
-      confirmLabel: "Bevestigen",
-      danger: false,
-      showReason: false,
-      reasonLabel: "Reden (optioneel)",
-      reason: "",
-      resolve: null,
-    },
-
     lastUpdated: null,
     refreshTimer: null,
     clockTimer: null,
     now: Date.now(),
 
-    toasts: [],
-
     // --- Levenscyclus ---
 
     init() {
       this.form.requester = this.readName();
-      this.adminCode = this.readAdminCode();
       this.loadTab();
-      this.startAutoRefresh();
-      this.clockTimer = setInterval(() => (this.now = Date.now()), 30000);
+
+      // Adminstatus en "alles opschonen" leven in de gedeelde Alpine.store
+      // (zie js/app.js); deze view moet zijn lijst verversen zodra dat verandert.
+      const onAdminChanged = () => this.loadTab({ silent: true });
+      const onDataWiped = () => {
+        this.tab = "open";
+        this.items = { open: [], ordered: [], rejected: [] };
+        this.frequent = [];
+        this.loadTab();
+      };
+      window.addEventListener("admin-changed", onAdminChanged);
+      window.addEventListener("data-wiped", onDataWiped);
+
+      // Direct verversen zodra het tabblad weer actief wordt (i.p.v. te
+      // wachten op de eerstvolgende AUTO_REFRESH_MS-tick).
+      const onVisible = () => {
+        if (document.visibilityState === "visible")
+          this.loadTab({ silent: true });
+      };
+      document.addEventListener("visibilitychange", onVisible);
+
+      // De route wisselt deze view in/uit via <template x-if>, wat het
+      // element (en dus dit component) volledig verwijdert en later opnieuw
+      // aanmaakt. Alpine kent geen destroy()-hook voor x-data-fabrieken, dus
+      // ruimt de timers/listeners zichzelf op zodra $el niet meer verbonden is.
+      const stopIfRemoved = () => {
+        if (this.$el.isConnected) return false;
+        clearInterval(this.refreshTimer);
+        clearInterval(this.clockTimer);
+        window.removeEventListener("admin-changed", onAdminChanged);
+        window.removeEventListener("data-wiped", onDataWiped);
+        document.removeEventListener("visibilitychange", onVisible);
+        return true;
+      };
+
+      this.refreshTimer = setInterval(() => {
+        if (stopIfRemoved()) return;
+        if (document.visibilityState === "visible" && !this.loading) {
+          this.loadTab({ silent: true });
+        }
+      }, AUTO_REFRESH_MS);
+
+      this.clockTimer = setInterval(() => {
+        if (stopIfRemoved()) return;
+        this.now = Date.now();
+      }, 30000);
     },
 
     get isAdmin() {
-      return Boolean(this.adminCode);
+      return this.$store.app.isAdmin;
     },
 
-    get visibleItems() {
-      return this.tab === "ordered" ? this.items.ordered : this.items.open;
+    // Eén gedeeld itemrij-blok in index.html rendert open/besteld/afgewezen
+    // via deze array, met `tab` als discriminator voor welke metadata/acties
+    // getoond worden (zie template: :class, x-show="tab === '...'").
+    get currentTabItems() {
+      if (this.tab === "ordered") return this.items.ordered;
+      if (this.tab === "rejected") return this.items.rejected;
+      return this.items.open;
     },
 
     get openCount() {
@@ -124,8 +148,7 @@ function boodschappen() {
       );
     },
 
-    // Donderdag 12:00 is de deadline voor de ronde van deze week; is die al
-    // geweest, dan tellen we af naar volgende week donderdag.
+    // Is de deadline al geweest deze week, dan tellen we af naar volgende week.
     get deadline() {
       const deadline = new Date(this.now);
       deadline.setHours(DEADLINE_HOUR, 0, 0, 0);
@@ -142,56 +165,12 @@ function boodschappen() {
       if (hoursLeft < 1) countdown = "nog minder dan een uur";
       else if (hoursLeft < 24) countdown = `nog ${hoursLeft} uur`;
       else countdown = `nog ${Math.ceil(hoursLeft / 24)} dagen`;
-      return `Deadline voor deze ronde: donderdag 12:00 (${countdown})`;
+      const time = `${String(DEADLINE_HOUR).padStart(2, "0")}:00`;
+      return `Deadline voor deze ronde: donderdag ${time} (${countdown})`;
     },
 
     get lastUpdatedLabel() {
-      if (!this.lastUpdated) return "";
-      const seconds = Math.max(
-        0,
-        Math.round((this.now - this.lastUpdated) / 1000),
-      );
-      if (seconds < 10) return "zojuist bijgewerkt";
-      if (seconds < 60) return `${seconds}s geleden bijgewerkt`;
-      const minutes = Math.round(seconds / 60);
-      if (minutes < 60) return `${minutes} min geleden bijgewerkt`;
-      const hours = Math.round(minutes / 60);
-      return `${hours} uur geleden bijgewerkt`;
-    },
-
-    // --- API ---
-
-    async api(path, { method = "GET", body } = {}) {
-      const headers = {};
-      if (body) headers["Content-Type"] = "application/json";
-      if (this.adminCode) headers["X-Admin-Code"] = this.adminCode;
-
-      const response = await fetch(`/api${path}`, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-
-      let data = {};
-      try {
-        data = await response.json();
-      } catch {
-        // Geen JSON terug: laat de statuscode het verhaal vertellen.
-      }
-
-      if (!response.ok) {
-        // Een afgekeurde admincode betekent dat de opgeslagen code niet meer klopt.
-        if (
-          response.status === 403 &&
-          this.adminCode &&
-          data.error === "Admincode vereist"
-        ) {
-          this.forgetAdmin();
-        }
-        throw new Error(data.error || `Er ging iets mis (${response.status})`);
-      }
-
-      return data;
+      return relativeShort(this.lastUpdated, this.now);
     },
 
     // --- Laden ---
@@ -200,7 +179,7 @@ function boodschappen() {
       if (!silent) this.loading = true;
       try {
         if (this.tab === "frequent") {
-          const { products } = await this.api("/frequent");
+          const { products } = await this.$store.app.api("/frequent");
           this.frequent = products;
         } else {
           const status =
@@ -209,12 +188,12 @@ function boodschappen() {
               : this.tab === "rejected"
                 ? "rejected"
                 : "open";
-          const { items } = await this.api(`/items?status=${status}`);
+          const { items } = await this.$store.app.api(`/items?status=${status}`);
           this.items[this.tab] = items;
         }
         this.lastUpdated = Date.now();
       } catch (error) {
-        if (!silent) this.toast(error.message, "error");
+        if (!silent) this.$store.app.toast(error.message, "error");
       } finally {
         if (!silent) this.loading = false;
       }
@@ -224,21 +203,6 @@ function boodschappen() {
       if (this.tab === tab) return;
       this.tab = tab;
       this.loadTab();
-    },
-
-    // Ververst de actieve tab elke AUTO_REFRESH_MS zonder laadspinner, zodat
-    // wijzigingen van collega's ook zichtbaar worden zonder handmatig te verversen.
-    // Staat stil zodra het tabblad niet zichtbaar is, om geen requests te verspillen.
-    startAutoRefresh() {
-      this.refreshTimer = setInterval(() => {
-        if (document.visibilityState === "visible" && !this.loading) {
-          this.loadTab({ silent: true });
-        }
-      }, AUTO_REFRESH_MS);
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible")
-          this.loadTab({ silent: true });
-      });
     },
 
     // --- Zoeken bij AH ---
@@ -261,7 +225,7 @@ function boodschappen() {
 
     async runSearch(query) {
       try {
-        const { products } = await this.api(
+        const { products } = await this.$store.app.api(
           `/search?q=${encodeURIComponent(query)}`,
         );
         // Een trager antwoord op een oudere zoekterm mag een nieuwere niet overschrijven.
@@ -316,16 +280,16 @@ function boodschappen() {
 
       this.busyId = item.id;
       try {
-        const { item: updated } = await this.api(`/items/${item.id}`, {
+        const { item: updated } = await this.$store.app.api(`/items/${item.id}`, {
           method: "PATCH",
           body: { boost: true },
         });
         Object.assign(item, updated);
-        this.toast(`+1 gezet op het verzoek van ${item.requester}`);
+        this.$store.app.toast(`+1 gezet op het verzoek van ${item.requester}`);
         this.clearProduct();
         if (this.tab === "open") await this.loadTab({ silent: true });
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -363,7 +327,7 @@ function boodschappen() {
       if (this.submitting) return;
 
       if (!this.form.product) {
-        this.toast("Zoek en kies eerst een product", "error");
+        this.$store.app.toast("Zoek en kies eerst een product", "error");
         return;
       }
       this.requesterError = this.form.requester ? "" : "Kies je naam";
@@ -372,7 +336,7 @@ function boodschappen() {
       this.submitting = true;
       try {
         const product = this.form.product;
-        const { merged } = await this.api("/items", {
+        const { merged } = await this.$store.app.api("/items", {
           method: "POST",
           body: {
             requester: this.form.requester,
@@ -388,13 +352,13 @@ function boodschappen() {
           },
         });
 
-        this.toast(merged ? "Aantal opgehoogd" : "Toegevoegd aan de lijst");
+        this.$store.app.toast(merged ? "Aantal opgehoogd" : "Toegevoegd aan de lijst");
         this.clearProduct();
 
         this.tab = "open";
         await this.loadTab();
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.submitting = false;
       }
@@ -423,13 +387,13 @@ function boodschappen() {
 
       this.busyId = item.id;
       try {
-        const { item: updated } = await this.api(`/items/${item.id}`, {
+        const { item: updated } = await this.$store.app.api(`/items/${item.id}`, {
           method: "PATCH",
           body: { quantity, requester: this.form.requester },
         });
         Object.assign(item, updated);
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -437,20 +401,20 @@ function boodschappen() {
 
     async setStatus(item, status, confirmText) {
       if (confirmText) {
-        const { confirmed } = await this.askConfirm({ text: confirmText });
+        const { confirmed } = await this.$store.app.askConfirm({ text: confirmText });
         if (!confirmed) return;
       }
 
       this.busyId = item.id;
       try {
-        await this.api(`/items/${item.id}`, {
+        await this.$store.app.api(`/items/${item.id}`, {
           method: "PATCH",
           body: { status, requester: this.form.requester },
         });
         await this.loadTab();
-        this.toast(this.statusMessage(status));
+        this.$store.app.toast(this.statusMessage(status));
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -459,7 +423,7 @@ function boodschappen() {
     // Alleen de beheerder wijst af, en mag er een reden bij geven. Zelf intrekken
     // (setStatus hierboven) vraagt daar bewust niet naar.
     async rejectItem(item) {
-      const { confirmed, reason } = await this.askConfirm({
+      const { confirmed, reason } = await this.$store.app.askConfirm({
         title: "Item afwijzen?",
         text: `"${item.title}" wordt van de lijst gehaald.`,
         confirmLabel: "Afwijzen",
@@ -470,14 +434,14 @@ function boodschappen() {
 
       this.busyId = item.id;
       try {
-        await this.api(`/items/${item.id}`, {
+        await this.$store.app.api(`/items/${item.id}`, {
           method: "PATCH",
           body: { status: "rejected", requester: this.form.requester, reason },
         });
         await this.loadTab();
-        this.toast("Afgewezen");
+        this.$store.app.toast("Afgewezen");
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -486,7 +450,7 @@ function boodschappen() {
     // Definitief verwijderen van een afgewezen item: geen soft delete meer, de
     // rij verdwijnt echt uit D1 en dus ook uit het overzicht en de logs.
     async purgeItem(item) {
-      const { confirmed } = await this.askConfirm({
+      const { confirmed } = await this.$store.app.askConfirm({
         title: "Definitief verwijderen?",
         text: `"${item.title}" wordt definitief verwijderd. Dit kan niet ongedaan gemaakt worden.`,
         confirmLabel: "Definitief verwijderen",
@@ -496,13 +460,13 @@ function boodschappen() {
 
       this.busyId = item.id;
       try {
-        await this.api(`/items/${item.id}`, { method: "DELETE" });
+        await this.$store.app.api(`/items/${item.id}`, { method: "DELETE" });
         this.items.rejected = this.items.rejected.filter(
           (i) => i.id !== item.id,
         );
-        this.toast("Definitief verwijderd");
+        this.$store.app.toast("Definitief verwijderd");
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.busyId = null;
       }
@@ -516,7 +480,7 @@ function boodschappen() {
 
     async orderAll() {
       if (this.items.open.length === 0) return;
-      const { confirmed } = await this.askConfirm({
+      const { confirmed } = await this.$store.app.askConfirm({
         title: "Alles op besteld zetten?",
         text: `Alle ${this.items.open.length} verzoeken worden op besteld gezet.`,
         confirmLabel: "Op besteld zetten",
@@ -525,13 +489,13 @@ function boodschappen() {
 
       this.bulkBusy = true;
       try {
-        const { ordered } = await this.api("/order-all", { method: "POST" });
+        const { ordered } = await this.$store.app.api("/order-all", { method: "POST" });
         await this.loadTab();
-        this.toast(
+        this.$store.app.toast(
           `${ordered} ${ordered === 1 ? "item" : "items"} op besteld gezet`,
         );
       } catch (error) {
-        this.toast(error.message, "error");
+        this.$store.app.toast(error.message, "error");
       } finally {
         this.bulkBusy = false;
       }
@@ -542,7 +506,7 @@ function boodschappen() {
     async copyList() {
       const items = this.items.open;
       if (items.length === 0) {
-        this.toast("De lijst is leeg", "error");
+        this.$store.app.toast("De lijst is leeg", "error");
         return;
       }
 
@@ -566,11 +530,7 @@ function boodschappen() {
 
       const heading = `Boodschappenlijst ${new Date().toLocaleDateString(
         "nl-NL",
-        {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        },
+        { day: "numeric", month: "long", year: "numeric" },
       )}`;
 
       const lines = [...grouped.values()].map((entry) => {
@@ -581,150 +541,9 @@ function boodschappen() {
 
       try {
         await navigator.clipboard.writeText([heading, "", ...lines].join("\n"));
-        this.toast("Lijst gekopieerd");
+        this.$store.app.toast("Lijst gekopieerd");
       } catch {
-        this.toast("Kopieren lukte niet", "error");
-      }
-    },
-
-    // --- Bevestigingsdialoog ---
-    // Eén generiek, native <dialog>-element voor intrekken/afwijzen/bulk-acties,
-    // in plaats van de kale browser-confirm()/prompt().
-
-    askConfirm({
-      title = "Weet je het zeker?",
-      text = "",
-      confirmLabel = "Bevestigen",
-      danger = false,
-      showReason = false,
-      reasonLabel = "Reden (optioneel)",
-    }) {
-      Object.assign(this.confirmDialog, {
-        title,
-        text,
-        confirmLabel,
-        danger,
-        showReason,
-        reasonLabel,
-        reason: "",
-      });
-      this.$nextTick(() => this.$refs.confirmDialog?.showModal());
-      return new Promise((resolve) => {
-        this.confirmDialog.resolve = resolve;
-      });
-    },
-
-    resolveConfirm(confirmed) {
-      this.$refs.confirmDialog?.close();
-      const resolve = this.confirmDialog.resolve;
-      const reason = this.confirmDialog.reason.trim();
-      this.confirmDialog.resolve = null;
-      resolve?.({ confirmed, reason });
-    },
-
-    // --- Beheer ---
-
-    openAdminModal() {
-      this.adminInput = "";
-      this.adminError = "";
-      this.showAdminModal = true;
-      this.$nextTick(() => this.$refs.adminInput?.focus());
-    },
-
-    async confirmAdmin() {
-      const code = this.adminInput.trim();
-      if (!code) return;
-
-      const previous = this.adminCode;
-      this.adminCode = code;
-      try {
-        await this.api("/admin", { method: "POST" });
-        this.storeAdminCode(code);
-        this.showAdminModal = false;
-        this.toast("Ingelogd als beheerder");
-        await this.loadTab();
-      } catch {
-        this.adminCode = previous;
-        this.adminError = "Die code klopt niet";
-      }
-    },
-
-    logoutAdmin() {
-      this.forgetAdmin();
-      this.toast("Uitgelogd");
-      this.loadTab();
-    },
-
-    forgetAdmin() {
-      this.adminCode = null;
-      try {
-        localStorage.removeItem(STORAGE_ADMIN);
-      } catch {
-        // localStorage geblokkeerd; niets aan te doen.
-      }
-    },
-
-    // --- Alles opschonen ---
-    // Bewust verstopt (geen zichtbare knop) en pas actief na het exact overtypen
-    // van WIPE_CONFIRM_PHRASE: dit is onomkeerbaar en verwijdert echt alles.
-
-    wipeConfirmPhrase: WIPE_CONFIRM_PHRASE,
-
-    get wipeConfirmMatches() {
-      return this.wipeConfirmInput.trim() === WIPE_CONFIRM_PHRASE;
-    },
-
-    openWipeModal() {
-      this.wipeConfirmInput = "";
-      this.showWipeModal = true;
-    },
-
-    async confirmWipe() {
-      if (!this.wipeConfirmMatches || this.wipeBusy) return;
-
-      this.wipeBusy = true;
-      try {
-        await this.api("/wipe", {
-          method: "POST",
-          body: { confirm: this.wipeConfirmInput.trim() },
-        });
-        this.showWipeModal = false;
-        this.tab = "open";
-        this.items = { open: [], ordered: [], rejected: [] };
-        this.frequent = [];
-        await this.loadTab();
-        this.toast("Alles opgeschoond");
-      } catch (error) {
-        this.toast(error.message, "error");
-      } finally {
-        this.wipeBusy = false;
-      }
-    },
-
-    storeAdminCode(code) {
-      try {
-        const expiresAt = Date.now() + ADMIN_DAYS * 24 * 60 * 60 * 1000;
-        localStorage.setItem(
-          STORAGE_ADMIN,
-          JSON.stringify({ code, expiresAt }),
-        );
-      } catch {
-        // Niet kunnen onthouden is vervelend, niet fataal.
-      }
-    },
-
-    readAdminCode() {
-      try {
-        const stored = localStorage.getItem(STORAGE_ADMIN);
-        if (!stored) return null;
-        const { code, expiresAt } = JSON.parse(stored);
-        if (!code || Date.now() > expiresAt) {
-          localStorage.removeItem(STORAGE_ADMIN);
-          return null;
-        }
-        return code;
-      } catch {
-        return null;
+        this.$store.app.toast("Kopieren lukte niet", "error");
       }
     },
 
@@ -750,40 +569,8 @@ function boodschappen() {
 
     // --- Weergave ---
 
-    toast(message, type = "success") {
-      const id = Date.now() + Math.random();
-      this.toasts.push({ id, message, type });
-      setTimeout(() => {
-        this.toasts = this.toasts.filter((t) => t.id !== id);
-      }, 4000);
-    },
-
-    price(value) {
-      if (value === null || value === undefined) return "";
-      return new Intl.NumberFormat("nl-NL", {
-        style: "currency",
-        currency: "EUR",
-      }).format(value);
-    },
-
-    date(value) {
-      if (!value) return "";
-      return new Date(value).toLocaleDateString("nl-NL", {
-        day: "numeric",
-        month: "short",
-      });
-    },
-
-    since(value) {
-      if (!value) return "";
-      const days = Math.floor(
-        (Date.now() - new Date(value).getTime()) / 86400000,
-      );
-      if (days <= 0) return "vandaag";
-      if (days === 1) return "gisteren";
-      if (days < 14) return `${days} dagen geleden`;
-      if (days < 60) return `${Math.floor(days / 7)} weken geleden`;
-      return `${Math.floor(days / 30)} maanden geleden`;
-    },
-  };
-}
+    price,
+    date,
+    since,
+  }));
+});
