@@ -37,13 +37,62 @@
             width="140"
             height="52"
           />
-          <span class="brand__title">Boodschappen</span>
+          <span class="brand__title">Kemissies</span>
         </a>
         <a class="btn btn--ghost btn--sm" href="index.html">Naar de lijst</a>
       </div>
     </header>
 
     <main class="layout layout--single">
+      <section class="panel" aria-labelledby="overzicht-titel">
+        <h2 class="panel__title" id="overzicht-titel">Leuke weetjes</h2>
+        <p class="modal__text" style="margin-top: 0.5rem">
+          Over iedereen heen: wie en wat het vaakst op de lijst staat.
+        </p>
+
+        <div class="fun-facts" x-show="topRequester || topProduct">
+          <div class="fun-fact" x-show="topRequester">
+            <span class="fun-fact__label">Meest verzoekjes van</span>
+            <span
+              class="fun-fact__value"
+              x-text="topRequester?.requester"
+            ></span>
+          </div>
+          <div class="fun-fact" x-show="topProduct">
+            <span class="fun-fact__label">Meest aangevraagd</span>
+            <span class="fun-fact__value" x-text="topProduct?.title"></span>
+          </div>
+        </div>
+
+        <h3 class="panel__subtitle">Top 10 meest besteld (globaal)</h3>
+
+        <p class="empty" x-show="!topOverall.length" style="padding: 1.5rem 0">
+          Nog niets besteld.
+        </p>
+
+        <ul class="grid" style="margin-top: 1.25rem" x-show="topOverall.length">
+          <template
+            x-for="product in topOverall"
+            :key="product.productId ?? product.title"
+          >
+            <li class="card">
+              <img
+                class="card__image"
+                :src="product.imageUrl"
+                :alt="''"
+                loading="lazy"
+                @error="$el.style.visibility = 'hidden'"
+              />
+              <p class="card__title" x-text="product.title"></p>
+              <p class="card__meta">
+                <span class="tag" x-text="product.totalQuantity + 'x'"></span>
+                <span x-text="product.times + ' keer besteld'"></span>
+              </p>
+            </li>
+          </template>
+        </ul>
+      </section>
+
       <section class="panel" aria-labelledby="stats-titel">
         <h2 class="panel__title" id="stats-titel">Statistieken per persoon</h2>
         <p class="modal__text" style="margin-top: 0.5rem">

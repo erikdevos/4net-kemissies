@@ -7,12 +7,19 @@ function stats() {
     selected: "",
     log: [],
     topProducts: [],
+    topOverall: [],
+    topRequester: null,
+    topProduct: null,
     loading: false,
     errorMessage: "",
 
     async init() {
-      const { requesters } = await this.api("/stats");
+      const { requesters, topOverall, topRequester, topProduct } =
+        await this.api("/stats");
       this.requesters = requesters;
+      this.topOverall = topOverall;
+      this.topRequester = topRequester;
+      this.topProduct = topProduct;
     },
 
     async api(path) {

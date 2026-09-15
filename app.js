@@ -29,6 +29,10 @@ const STORAGE_ADMIN = "boodschappen_admin";
 const ADMIN_DAYS = 30;
 const MAX_QUANTITY = 10;
 const WIPE_CONFIRM_PHRASE = "VERWIJDER ALLES";
+const AUTO_REFRESH_MS = 30000;
+// Deadline voor de wekelijkse ronde: donderdag 12:00 's middags.
+const DEADLINE_WEEKDAY = 4; // 0 = zondag ... 4 = donderdag
+const DEADLINE_HOUR = 16;
 
 function boodschappen() {
   return {
@@ -43,8 +47,11 @@ function boodschappen() {
 
     items: { open: [], ordered: [], rejected: [] },
     frequent: [],
+    frequentQuery: "",
 
     form: { product: null, quantity: 1, note: "", requester: "" },
+    requesterError: "",
+    duplicateItem: null,
 
     query: "",
     results: [],
@@ -62,6 +69,24 @@ function boodschappen() {
     wipeConfirmInput: "",
     wipeBusy: false,
 
+    // Eén generieke, native <dialog>-gebaseerde bevestiging voor intrekken,
+    // afwijzen en bulk-acties - vervangt de kale confirm()/prompt() dialogen.
+    confirmDialog: {
+      title: "",
+      text: "",
+      confirmLabel: "Bevestigen",
+      danger: false,
+      showReason: false,
+      reasonLabel: "Reden (optioneel)",
+      reason: "",
+      resolve: null,
+    },
+
+    lastUpdated: null,
+    refreshTimer: null,
+    clockTimer: null,
+    now: Date.now(),
+
     toasts: [],
 
     // --- Levenscyclus ---
@@ -70,6 +95,8 @@ function boodschappen() {
       this.form.requester = this.readName();
       this.adminCode = this.readAdminCode();
       this.loadTab();
+      this.startAutoRefresh();
+      this.clockTimer = setInterval(() => (this.now = Date.now()), 30000);
     },
 
     get isAdmin() {
@@ -87,6 +114,49 @@ function boodschappen() {
     get openCountLabel() {
       const count = this.openCount;
       return `${count} ${count === 1 ? "stuk" : "stuks"}`;
+    },
+
+    get filteredFrequent() {
+      const query = this.frequentQuery.trim().toLowerCase();
+      if (!query) return this.frequent;
+      return this.frequent.filter((product) =>
+        product.title.toLowerCase().includes(query),
+      );
+    },
+
+    // Donderdag 12:00 is de deadline voor de ronde van deze week; is die al
+    // geweest, dan tellen we af naar volgende week donderdag.
+    get deadline() {
+      const deadline = new Date(this.now);
+      deadline.setHours(DEADLINE_HOUR, 0, 0, 0);
+      let daysAhead = (DEADLINE_WEEKDAY - deadline.getDay() + 7) % 7;
+      if (daysAhead === 0 && deadline.getTime() <= this.now) daysAhead = 7;
+      deadline.setDate(deadline.getDate() + daysAhead);
+      return deadline;
+    },
+
+    get deadlineLabel() {
+      const msLeft = this.deadline.getTime() - this.now;
+      const hoursLeft = Math.max(0, Math.round(msLeft / 3600000));
+      let countdown;
+      if (hoursLeft < 1) countdown = "nog minder dan een uur";
+      else if (hoursLeft < 24) countdown = `nog ${hoursLeft} uur`;
+      else countdown = `nog ${Math.ceil(hoursLeft / 24)} dagen`;
+      return `Deadline voor deze ronde: donderdag 12:00 (${countdown})`;
+    },
+
+    get lastUpdatedLabel() {
+      if (!this.lastUpdated) return "";
+      const seconds = Math.max(
+        0,
+        Math.round((this.now - this.lastUpdated) / 1000),
+      );
+      if (seconds < 10) return "zojuist bijgewerkt";
+      if (seconds < 60) return `${seconds}s geleden bijgewerkt`;
+      const minutes = Math.round(seconds / 60);
+      if (minutes < 60) return `${minutes} min geleden bijgewerkt`;
+      const hours = Math.round(minutes / 60);
+      return `${hours} uur geleden bijgewerkt`;
     },
 
     // --- API ---
@@ -126,8 +196,8 @@ function boodschappen() {
 
     // --- Laden ---
 
-    async loadTab() {
-      this.loading = true;
+    async loadTab({ silent = false } = {}) {
+      if (!silent) this.loading = true;
       try {
         if (this.tab === "frequent") {
           const { products } = await this.api("/frequent");
@@ -142,10 +212,11 @@ function boodschappen() {
           const { items } = await this.api(`/items?status=${status}`);
           this.items[this.tab] = items;
         }
+        this.lastUpdated = Date.now();
       } catch (error) {
-        this.toast(error.message, "error");
+        if (!silent) this.toast(error.message, "error");
       } finally {
-        this.loading = false;
+        if (!silent) this.loading = false;
       }
     },
 
@@ -153,6 +224,21 @@ function boodschappen() {
       if (this.tab === tab) return;
       this.tab = tab;
       this.loadTab();
+    },
+
+    // Ververst de actieve tab elke AUTO_REFRESH_MS zonder laadspinner, zodat
+    // wijzigingen van collega's ook zichtbaar worden zonder handmatig te verversen.
+    // Staat stil zodra het tabblad niet zichtbaar is, om geen requests te verspillen.
+    startAutoRefresh() {
+      this.refreshTimer = setInterval(() => {
+        if (document.visibilityState === "visible" && !this.loading) {
+          this.loadTab({ silent: true });
+        }
+      }, AUTO_REFRESH_MS);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible")
+          this.loadTab({ silent: true });
+      });
     },
 
     // --- Zoeken bij AH ---
@@ -199,6 +285,7 @@ function boodschappen() {
       this.results = [];
       this.resultsOpen = false;
       this.searchError = "";
+      this.duplicateItem = this.findDuplicate(product);
       this.$nextTick(() => this.$refs.quantity?.focus());
     },
 
@@ -206,6 +293,49 @@ function boodschappen() {
       this.form.product = null;
       this.form.quantity = 1;
       this.form.note = "";
+      this.duplicateItem = null;
+    },
+
+    // Staat dit product al open op de lijst, van iemand anders? Dan is "+1" op
+    // dat verzoek zetten nuttiger dan een tweede, losse regel aanmaken (van je
+    // eigen verzoeken samenvoegen doet de server al automatisch bij het indienen).
+    findDuplicate(product) {
+      return (
+        this.items.open.find((item) => {
+          if (this.isMine(item)) return false;
+          return product.productId != null
+            ? item.productId === product.productId
+            : item.title.toLowerCase() === product.title.toLowerCase();
+        }) || null
+      );
+    },
+
+    async boostDuplicate() {
+      const item = this.duplicateItem;
+      if (!item || this.busyId === item.id) return;
+
+      this.busyId = item.id;
+      try {
+        const { item: updated } = await this.api(`/items/${item.id}`, {
+          method: "PATCH",
+          body: { boost: true },
+        });
+        Object.assign(item, updated);
+        this.toast(`+1 gezet op het verzoek van ${item.requester}`);
+        this.clearProduct();
+        if (this.tab === "open") await this.loadTab({ silent: true });
+      } catch (error) {
+        this.toast(error.message, "error");
+      } finally {
+        this.busyId = null;
+      }
+    },
+
+    focusSearch() {
+      document
+        .getElementById("formulier")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      this.$nextTick(() => document.getElementById("zoek")?.focus());
     },
 
     // Product uit "Vaker besteld" terugzetten in het formulier.
@@ -236,10 +366,8 @@ function boodschappen() {
         this.toast("Zoek en kies eerst een product", "error");
         return;
       }
-      if (!this.form.requester) {
-        this.toast("Kies je naam", "error");
-        return;
-      }
+      this.requesterError = this.form.requester ? "" : "Kies je naam";
+      if (this.requesterError) return;
 
       this.submitting = true;
       try {
@@ -308,7 +436,10 @@ function boodschappen() {
     },
 
     async setStatus(item, status, confirmText) {
-      if (confirmText && !confirm(confirmText)) return;
+      if (confirmText) {
+        const { confirmed } = await this.askConfirm({ text: confirmText });
+        if (!confirmed) return;
+      }
 
       this.busyId = item.id;
       try {
@@ -328,10 +459,14 @@ function boodschappen() {
     // Alleen de beheerder wijst af, en mag er een reden bij geven. Zelf intrekken
     // (setStatus hierboven) vraagt daar bewust niet naar.
     async rejectItem(item) {
-      if (!confirm("Dit item afwijzen?")) return;
-      const reason = (
-        prompt("Reden voor afwijzen (optioneel):", "") || ""
-      ).trim();
+      const { confirmed, reason } = await this.askConfirm({
+        title: "Item afwijzen?",
+        text: `"${item.title}" wordt van de lijst gehaald.`,
+        confirmLabel: "Afwijzen",
+        danger: true,
+        showReason: true,
+      });
+      if (!confirmed) return;
 
       this.busyId = item.id;
       try {
@@ -351,13 +486,20 @@ function boodschappen() {
     // Definitief verwijderen van een afgewezen item: geen soft delete meer, de
     // rij verdwijnt echt uit D1 en dus ook uit het overzicht en de logs.
     async purgeItem(item) {
-      if (!confirm(`"${item.title}" definitief verwijderen? Dit kan niet ongedaan gemaakt worden.`))
-        return;
+      const { confirmed } = await this.askConfirm({
+        title: "Definitief verwijderen?",
+        text: `"${item.title}" wordt definitief verwijderd. Dit kan niet ongedaan gemaakt worden.`,
+        confirmLabel: "Definitief verwijderen",
+        danger: true,
+      });
+      if (!confirmed) return;
 
       this.busyId = item.id;
       try {
         await this.api(`/items/${item.id}`, { method: "DELETE" });
-        this.items.rejected = this.items.rejected.filter((i) => i.id !== item.id);
+        this.items.rejected = this.items.rejected.filter(
+          (i) => i.id !== item.id,
+        );
         this.toast("Definitief verwijderd");
       } catch (error) {
         this.toast(error.message, "error");
@@ -374,10 +516,12 @@ function boodschappen() {
 
     async orderAll() {
       if (this.items.open.length === 0) return;
-      if (
-        !confirm(`Alle ${this.items.open.length} verzoeken op besteld zetten?`)
-      )
-        return;
+      const { confirmed } = await this.askConfirm({
+        title: "Alles op besteld zetten?",
+        text: `Alle ${this.items.open.length} verzoeken worden op besteld gezet.`,
+        confirmLabel: "Op besteld zetten",
+      });
+      if (!confirmed) return;
 
       this.bulkBusy = true;
       try {
@@ -441,6 +585,41 @@ function boodschappen() {
       } catch {
         this.toast("Kopieren lukte niet", "error");
       }
+    },
+
+    // --- Bevestigingsdialoog ---
+    // Eén generiek, native <dialog>-element voor intrekken/afwijzen/bulk-acties,
+    // in plaats van de kale browser-confirm()/prompt().
+
+    askConfirm({
+      title = "Weet je het zeker?",
+      text = "",
+      confirmLabel = "Bevestigen",
+      danger = false,
+      showReason = false,
+      reasonLabel = "Reden (optioneel)",
+    }) {
+      Object.assign(this.confirmDialog, {
+        title,
+        text,
+        confirmLabel,
+        danger,
+        showReason,
+        reasonLabel,
+        reason: "",
+      });
+      this.$nextTick(() => this.$refs.confirmDialog?.showModal());
+      return new Promise((resolve) => {
+        this.confirmDialog.resolve = resolve;
+      });
+    },
+
+    resolveConfirm(confirmed) {
+      this.$refs.confirmDialog?.close();
+      const resolve = this.confirmDialog.resolve;
+      const reason = this.confirmDialog.reason.trim();
+      this.confirmDialog.resolve = null;
+      resolve?.({ confirmed, reason });
     },
 
     // --- Beheer ---
@@ -552,6 +731,7 @@ function boodschappen() {
     // --- Naam onthouden ---
 
     rememberName() {
+      this.requesterError = "";
       try {
         localStorage.setItem(STORAGE_NAME, this.form.requester);
       } catch {

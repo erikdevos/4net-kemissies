@@ -166,6 +166,19 @@ img {
   gap: 1rem;
 }
 
+.panel__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.last-updated {
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .panel__title {
   font-size: 1.375rem;
   font-weight: 600;
@@ -176,6 +189,40 @@ img {
 }
 .panel--form .panel__title {
   margin-bottom: 1.5rem;
+}
+
+.panel__subtitle {
+  margin-top: 2rem;
+  margin-bottom: 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.fun-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.fun-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  background: var(--brand-soft);
+  border-radius: var(--radius-sm);
+}
+
+.fun-fact__label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.fun-fact__value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--brand);
 }
 
 @media (max-width: 860px) {
@@ -268,6 +315,32 @@ select {
   display: flex;
   gap: 0.75rem;
   margin-top: 1.5rem;
+}
+
+.deadline-hint {
+  margin-top: -0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+select.is-invalid {
+  border-color: var(--danger);
+}
+
+.duplicate-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  background: #fff8ec;
+  border: 1px solid #f0dfb8;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.duplicate-hint p {
+  margin: 0;
 }
 
 /* ==========================================================================
@@ -572,8 +645,8 @@ select {
 }
 
 .stepper button {
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 0;
   background: none;
   color: var(--brand);
@@ -691,6 +764,13 @@ select {
   text-align: left;
 }
 
+.empty--cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
 .loading {
   display: flex;
   align-items: center;
@@ -699,6 +779,84 @@ select {
   padding: 3rem 1rem;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+/* ==========================================================================
+   Skeleton loading
+   ========================================================================== */
+
+.skeleton {
+  pointer-events: none;
+}
+
+.skeleton__block {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--line) 25%,
+    var(--brand-soft) 37%,
+    var(--line) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton__image {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.skeleton__line {
+  height: 0.7rem;
+}
+
+.skeleton__line--title {
+  width: 60%;
+}
+
+.skeleton__line--meta {
+  width: 35%;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* ==========================================================================
+   Lijst-animaties
+   ========================================================================== */
+
+.item-enter {
+  transition:
+    opacity 0.25s ease-out,
+    transform 0.25s ease-out;
+}
+.item-enter[style*="display: none"] {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.item-leave {
+  transition:
+    opacity 0.2s ease-in,
+    transform 0.2s ease-in;
+}
+.item-leave[style*="display: none"] {
+  opacity: 0;
+  transform: translateX(8px);
 }
 
 /* ==========================================================================
@@ -768,8 +926,8 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -898,6 +1056,29 @@ select {
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 1.25rem;
+}
+
+/* ==========================================================================
+   Bevestigingsdialoog (native <dialog>)
+   ========================================================================== */
+
+.confirm-dialog {
+  width: 100%;
+  max-width: 24rem;
+  padding: 2rem;
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(43, 45, 48, 0.25);
+  font-family: inherit;
+  color: var(--ink);
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(43, 45, 48, 0.45);
+}
+
+.confirm-dialog input[type="text"] {
+  margin-top: 0.25rem;
 }
 
 /* ==========================================================================
