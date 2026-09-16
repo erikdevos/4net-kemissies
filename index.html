@@ -87,7 +87,9 @@
             id="formulier"
             aria-labelledby="formulier-titel"
           >
-            <h2 class="panel__title" id="formulier-titel">Wat is je verzoek?</h2>
+            <h2 class="panel__title" id="formulier-titel">
+              Wat is je verzoek?
+            </h2>
             <p class="field__hint deadline-hint" x-text="deadlineLabel"></p>
 
             <form @submit.prevent="submit" novalidate>
@@ -385,7 +387,10 @@
 
             <div x-show="!loading">
               <!-- Lege staten, één per tab -->
-              <div class="empty empty--cta" x-show="tab === 'open' && !items.open.length">
+              <div
+                class="empty empty--cta"
+                x-show="tab === 'open' && !items.open.length"
+              >
                 <p>
                   Nog geen verzoeken deze week. Wie zet de eerste boodschap op
                   de lijst?
@@ -402,14 +407,14 @@
                 class="empty"
                 x-show="tab === 'ordered' && !items.ordered.length"
               >
-                Er is nog niets besteld. Zodra de beheerder een ronde
-                afrondt, verschijnt die hier.
+                Er is nog niets besteld. Zodra de beheerder een ronde afrondt,
+                verschijnt die hier.
               </p>
               <template x-if="tab === 'rejected'">
                 <div>
                   <p class="field__hint" x-show="items.rejected.length">
-                    Alleen de afwijzingen van de laatste 30 dagen. Een
-                    volledig overzicht per persoon staat op de
+                    Alleen de afwijzingen van de laatste 30 dagen. Een volledig
+                    overzicht per persoon staat op de
                     <a href="#/stats">statistiekenpagina</a>.
                   </p>
                   <p class="empty" x-show="!items.rejected.length">
@@ -599,8 +604,8 @@
                 </div>
 
                 <p class="empty" x-show="!frequent.length">
-                  Zodra er een ronde besteld is, verschijnen hier de
-                  producten die we het vaakst bestellen.
+                  Zodra er een ronde besteld is, verschijnen hier de producten
+                  die we het vaakst bestellen.
                 </p>
                 <p
                   class="empty"
@@ -888,8 +893,8 @@
         <h2 class="modal__title" id="wipe-titel">Alles definitief wissen?</h2>
         <p class="modal__text">
           Dit verwijdert <strong>alle</strong> verzoeken - open, besteld,
-          ingetrokken en afgewezen - onomkeerbaar. Er is geen weg terug en
-          geen back-up. Typ hieronder exact
+          ingetrokken en afgewezen - onomkeerbaar. Er is geen weg terug en geen
+          back-up. Typ hieronder exact
           <strong x-text="$store.app.wipeConfirmPhrase"></strong> om te
           bevestigen.
         </p>
